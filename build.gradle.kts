@@ -198,6 +198,7 @@ val javadocAggregate by tasks.registering(Javadoc::class) {
 
 /** Similar to {@link #javadocAggregate} but includes tests.
  * CI uses this target to validate javadoc (e.g. checking for broken links). */
+/*
 val javadocAggregateIncludingTests by tasks.registering(Javadoc::class) {
     description = "Generates aggregate javadoc for all the artifacts"
 
@@ -209,7 +210,7 @@ val javadocAggregateIncludingTests by tasks.registering(Javadoc::class) {
     setSource(sourceSets.map { set -> set.map { it.allJava } })
     setDestinationDir(file("$buildDir/docs/javadocAggregateIncludingTests"))
 }
-
+*/
 val adaptersForSqlline = listOf(
     ":babel", ":cassandra", ":druid", ":elasticsearch",
     ":file", ":geode", ":innodb", ":kafka", ":mongodb",
