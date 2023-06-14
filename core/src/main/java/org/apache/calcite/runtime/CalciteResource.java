@@ -389,6 +389,9 @@ public interface CalciteResource {
   @BaseMessage("Aggregate expression ''{0}'' must not contain a WITHIN GROUP clause")
   ExInst<SqlValidatorException> withinGroupClauseIllegalInAggregate(String a0);
 
+  @BaseMessage("Percentile functions must have 1 or 2 arguments")
+  ExInst<SqlValidatorException> percentileFunctionsArgumentLimit();
+
   @BaseMessage("Aggregate expression is illegal in ORDER BY clause of non-aggregating SELECT")
   ExInst<SqlValidatorException> aggregateIllegalInOrderBy();
 
@@ -572,6 +575,9 @@ public interface CalciteResource {
 
   @BaseMessage("Argument to function ''{0}'' must be a literal")
   ExInst<SqlValidatorException> argumentMustBeLiteral(String a0);
+
+  @BaseMessage("Argument to function ''{0}'' must be a boolean literal")
+  ExInst<SqlValidatorException> argumentMustBeBooleanLiteral(String a0);
 
   @BaseMessage("Argument to function ''{0}'' must be a positive integer literal")
   ExInst<SqlValidatorException> argumentMustBePositiveInteger(String a0);

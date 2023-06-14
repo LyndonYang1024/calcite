@@ -70,6 +70,7 @@ import org.apache.calcite.rel.rules.AggregateReduceFunctionsRule;
 import org.apache.calcite.rel.rules.CoerceInputsRule;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.DateRangeRules;
+import org.apache.calcite.rel.rules.FilterAggregateTransposeRule;
 import org.apache.calcite.rel.rules.FilterFlattenCorrelatedConditionRule;
 import org.apache.calcite.rel.rules.FilterJoinRule;
 import org.apache.calcite.rel.rules.FilterMultiJoinMergeRule;
@@ -534,7 +535,8 @@ class RelOptRulesTest extends RelOptTestBase {
   }
 
   /** As {@link #testJoinDeriveIsNotNullFilterRule1()};
-   *  should not create IS NOT NULL filter if join condition is not strong wrt each key. */
+   * should not create IS NOT NULL filter if join condition is not strong wrt
+   * each key. */
   @Test void testJoinDeriveIsNotNullFilterRule13() {
     final String sql = "select t1.deptno from empnullables t1 inner join\n"
         + "empnullables t2 on coalesce(t1.ename, t2.ename) = 'abc'";
@@ -542,7 +544,8 @@ class RelOptRulesTest extends RelOptTestBase {
   }
 
   /** As {@link #testJoinDeriveIsNotNullFilterRule1()};
-   *  should not create IS NOT NULL filter if join condition is not strong wrt each key. */
+   * should not create IS NOT NULL filter if join condition is not strong wrt
+   * each key. */
   @Test void testJoinDeriveIsNotNullFilterRule14() {
     final String sql = "select t1.deptno from empnullables t1 inner join\n"
         + "empnullables t2 on nvl(t1.ename, t2.ename) = 'abc'";
@@ -553,7 +556,7 @@ class RelOptRulesTest extends RelOptTestBase {
   }
 
   /** As {@link #testJoinDeriveIsNotNullFilterRule1()};
-   *  should create IS NOT NULL filter only for the first operand of NULLIF. */
+   * should create IS NOT NULL filter only for the first operand of NULLIF. */
   @Test void testJoinDeriveIsNotNullFilterRule15() {
     final String sql = "select t1.deptno from empnullables t1 inner join\n"
         + "empnullables t2 on nullif(t1.ename, t2.ename) = 'abc'";
@@ -840,6 +843,25 @@ class RelOptRulesTest extends RelOptTestBase {
             CoreRules.AGGREGATE_FILTER_TRANSPOSE)
         .withRule(CoreRules.FILTER_AGGREGATE_TRANSPOSE)
         .check();
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-5425">[CALCITE-5425]
+   * Should not pushdown Filter through Aggregate without group keys</a>. */
+  @Test void testDoNotPushFilterThroughAggregateWithoutGroupKeys() {
+    final Function<RelBuilder, RelNode> relFn = b -> {
+      RelNode aggregate = b
+          .scan("EMP")
+          .aggregate(b.groupKey(), b.countStar(null))
+          .build();
+
+      // The reason why we use 'create' instead of 'RelBuilder#filter' is to prevent RelBuilder
+      // optimizing in 'filter', which would transform the RelBuilder to 'empty()' when the
+      // Filter is always false, this way, we won't be able to reproduce the problem
+      // described in CALCITE-5425.
+      return LogicalFilter.create(aggregate, b.getRexBuilder().makeLiteral(false));
+    };
+    relFn(relFn).withRule(FilterAggregateTransposeRule.Config.DEFAULT.toRule()).checkUnchanged();
   }
 
   /** Test case for
@@ -1499,7 +1521,7 @@ class RelOptRulesTest extends RelOptTestBase {
   }
 
   /** Tests implementing multiple distinct count the new way, using GROUPING
-   *  SETS. */
+   * SETS. */
   @Test void testDistinctCountMultiple() {
     final String sql = "select deptno, count(distinct ename),\n"
         + "  count(distinct job)\n"
@@ -3273,7 +3295,7 @@ class RelOptRulesTest extends RelOptTestBase {
   }
 
   /** Test case that reduces a nullable expression to a NOT NULL literal that
-   *  is cast to nullable. */
+   * is cast to nullable. */
   @Test void testReduceNullableToNotNull() {
     checkReduceNullableToNotNull(CoreRules.PROJECT_REDUCE_EXPRESSIONS);
   }
@@ -3799,10 +3821,10 @@ class RelOptRulesTest extends RelOptTestBase {
 
   private static Function<RelBuilder, RelNode> correlationWithEmpty(JoinRelType joinType,
       boolean emptyLeft, boolean emptyRight) {
-    final Holder<@Nullable RexCorrelVariable> v = Holder.empty();
+    final Holder<RexCorrelVariable> v = Holder.empty();
     return b -> {
       List<RexNode> requiredFields = new ArrayList<>();
-      b.scan("EMP").variable(v);
+      b.scan("EMP").variable(v::set);
       if (emptyLeft) {
         b.empty();
       }
@@ -5644,9 +5666,11 @@ class RelOptRulesTest extends RelOptTestBase {
    * empno is unique and all aggregate functions are splittable.
    */
   @Test void testAggregateRemove1() {
-    final String sql = "select empno, sum(sal), min(sal), max(sal), "
-        + "bit_and(distinct sal), bit_or(sal), count(distinct sal) "
-        + "from sales.emp group by empno, deptno\n";
+    final String sql = "select empno, sum(sal), min(sal), max(sal),\n"
+        + " bit_and(distinct sal), bit_or(sal), count(distinct sal),\n"
+        + " grouping(deptno)\n"
+        + "from sales.emp\n"
+        + "group by empno, deptno";
     sql(sql)
         .withRule(CoreRules.AGGREGATE_REMOVE,
             CoreRules.PROJECT_MERGE)
@@ -7656,13 +7680,13 @@ class RelOptRulesTest extends RelOptTestBase {
         .checkUnchanged();
   }
 
-  /**
-   * Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-5247">[CALCITE-5247]
-   *    * FilterJoinRule cannot simplify left join to inner join for `WHERE RHS.C1 IS NOT NULL OR
-   *    RHS.C2 IS NOT NULL`</a>.
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-5247">[CALCITE-5247]
+   * FilterJoinRule cannot simplify left join to inner join for `WHERE
+   * RHS.C1 IS NOT NULL OR RHS.C2 IS NOT NULL`</a>.
    *
-   *    This tests the case where the condition contains an OR between the IS NOT NULL filters
-   */
+   * <p>This tests the case where the condition contains an OR between
+   * the IS NOT NULL filters. */
   @Test void testFilterJoinRuleOrIsNotNull() {
     final String sql = "select * from\n"
         + "emp LHS\n"
@@ -7676,13 +7700,13 @@ class RelOptRulesTest extends RelOptTestBase {
         .check();
   }
 
-  /**
-   * Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-5247">[CALCITE-5247]
-   *    * FilterJoinRule cannot simplify left join to inner join for `WHERE RHS.C1 IS NOT NULL OR
-   *    RHS.C2 IS NOT NULL`</a>.
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-5247">[CALCITE-5247]
+   * FilterJoinRule cannot simplify left join to inner join for `WHERE
+   * RHS.C1 IS NOT NULL OR RHS.C2 IS NOT NULL`</a>.
    *
-   *    This tests the case where the condition contains an AND between the IS NOT NULL filters
-   */
+   * <p>This tests the case where the condition contains an AND
+   * between the IS NOT NULL filters. */
   @Test void testFilterJoinRuleAndIsNotNull() {
     final String sql = "select * from\n"
         + "emp LHS\n"
@@ -7820,13 +7844,13 @@ class RelOptRulesTest extends RelOptTestBase {
     }
   }
 
-  /**
-   * Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-4652">[CALCITE-4652]
-   * AggregateExpandDistinctAggregatesRule must cast top aggregates to original type</a>.
-   * <p>
-   * Checks AggregateExpandDistinctAggregatesRule when return type of the SUM aggregate
-   * is changed (expanded) by define custom type factory.
-   */
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-4652">[CALCITE-4652]
+   * AggregateExpandDistinctAggregatesRule must cast top aggregates to original
+   * type</a>.
+   *
+   * <p>Checks AggregateExpandDistinctAggregatesRule when return type of the SUM
+   * aggregate is changed (expanded) by define custom type factory. */
   @Test void testDistinctCountWithExpandSumType() {
     // Define new type system to expand SUM return type.
     RelDataTypeSystemImpl typeSystem = new RelDataTypeSystemImpl() {
@@ -7859,13 +7883,13 @@ class RelOptRulesTest extends RelOptTestBase {
         .check();
   }
 
-  /**
-   * Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-4818">[CALCITE-4818]
-   * AggregateExpandDistinctAggregatesRule must infer correct data type for top aggregate calls</a>.
-   * <p>
-   * Checks AggregateExpandDistinctAggregatesRule when return type of the SUM aggregate
-   * is changed (expanded) by define custom type factory.
-   */
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-4818">[CALCITE-4818]
+   * AggregateExpandDistinctAggregatesRule must infer correct data type for top
+   * aggregate calls</a>.
+   *
+   * <p>Checks AggregateExpandDistinctAggregatesRule when return type of the SUM
+   * aggregate is changed (expanded) by define custom type factory. */
   @Test void testSumAndDistinctSumWithExpandSumType() {
     // Define new type system to expand SUM return type.
     RelDataTypeSystemImpl typeSystem = new RelDataTypeSystemImpl() {

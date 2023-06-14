@@ -827,8 +827,8 @@ PATH,
 **PATTERN**,
 **PER**,
 **PERCENT**,
-**PERCENTILE_CONT**,
-**PERCENTILE_DISC**,
+PERCENTILE_CONT,
+PERCENTILE_DISC,
 **PERCENT_RANK**,
 **PERIOD**,
 **PERMUTE**,
@@ -2650,16 +2650,28 @@ BigQuery's type system uses confusingly different names for types and functions:
 |:- |:-----------------------------------------------|:-----------
 | p | expr :: type                                   | Casts *expr* to *type*
 | m | expr1 <=> expr2                                | Whether two values are equal, treating null values as the same, and it's similar to `IS NOT DISTINCT FROM`
+| * | ACOSH(numeric)                                 | Returns the inverse hyperbolic cosine of *numeric*
 | s | ARRAY(expr [, expr ]*)                         | Construct an array in Apache Spark
+| s | ARRAY_COMPACT(array)                           | Removes null values from the *array*
 | b | ARRAY_CONCAT(array [, array ]*)                | Concatenates one or more arrays. If any input argument is `NULL` the function returns `NULL`
-| s | ARRAY_DISTINCT(array)                          | Returns unique elements of *array*. Keeps ordering of elements.
+| s | ARRAY_CONTAINS(array, element)                 | Returns true if the *array* contains the *element*
+| s | ARRAY_DISTINCT(array)                          | Removes duplicate values from the *array* that keeps ordering of elements
+| s | ARRAY_EXCEPT(array1, array2)                   | Returns an array of the elements in *array1* but not in *array2*, without duplicates
+| s | ARRAY_INTERSECT(array1, array2)                | Returns an array of the elements in the intersection of *array1* and *array2*, without duplicates
 | b | ARRAY_LENGTH(array)                            | Synonym for `CARDINALITY`
+| s | ARRAY_MAX(array)                               | Returns the maximum value in the *array*
+| s | ARRAY_MIN(array)                               | Returns the minimum value in the *array*
 | s | ARRAY_REPEAT(element, count)                   | Returns the array containing element count times.
 | b | ARRAY_REVERSE(array)                           | Reverses elements of *array*
 | s | ARRAY_SIZE(array)                              | Synonym for `CARDINALITY`
+| b | ARRAY_TO_STRING(array, delimiter [, nullText ])| Returns a concatenation of the elements in *array* as a STRING and take *delimiter* as the delimiter. If the *nullText* parameter is used, the function replaces any `NULL` values in the array with the value of *nullText*. If the *nullText* parameter is not used, the function omits the `NULL` value and its preceding delimiter
+| s | ARRAY_UNION(array1, array2)                    | Returns an array of the elements in the union of *array1* and *array2*, without duplicates
+| s | SORT_ARRAY(array [, ascendingOrder])           | Sorts the *array* in ascending or descending order according to the natural ordering of the array elements. The default order is ascending if *ascendingOrder* is not specified. Null elements will be placed at the beginning of the returned array in ascending order or at the end of the returned array in descending order
+| * | ASINH(numeric)                                 | Returns the inverse hyperbolic sine of *numeric*
+| * | ATANH(numeric)                                 | Returns the inverse hyperbolic tangent of *numeric*
 | m s | CHAR(integer)                                | Returns the character whose ASCII code is *integer* % 256, or null if *integer* &lt; 0
 | b o p | CHR(integer)                               | Returns the character whose UTF-8 code is *integer*
-| o | CONCAT(string, string)                         | Concatenates two strings
+| o | CONCAT(string, string)                         | Concatenates two strings, returns null only when both string arguments are null, otherwise treats null as empty string
 | b m p | CONCAT(string [, string ]*)                | Concatenates two or more strings
 | m | COMPRESS(string)                               | Compresses a string using zlib compression and returns the result as a binary string
 | q | CONVERT(type, expression [ , style ])          | Equivalent to `CAST(expression AS type)`; ignores the *style* operand
@@ -2727,6 +2739,7 @@ BigQuery's type system uses confusingly different names for types and functions:
 | m | TO_BASE64(string)                              | Converts the *string* to base-64 encoded form and returns a encoded string
 | b m | FROM_BASE64(string)                          | Returns the decoded result of a base-64 *string* as a string
 | b o | LTRIM(string)                                | Returns *string* with all blanks removed from the start
+| s | MAP_ENTRIES(map)                               | Returns the entries of the *map* as an array, the order of the entries is not defined
 | s | MAP_KEYS(map)                                  | Returns the keys of the *map* as an array, the order of the entries is not defined
 | s | MAP_VALUES(map)                                | Returns the values of the *map* as an array, the order of the entries is not defined
 | b m p | MD5(string)                                | Calculates an MD5 128-bit checksum of *string* and returns it as a hex string
@@ -2840,6 +2853,8 @@ Dialect-specific aggregate functions.
 | b | LOGICAL_OR(condition)                          | Synonym for `SOME`
 | s | MAX_BY(value, comp)                            | Synonym for `ARG_MAX`
 | s | MIN_BY(value, comp)                            | Synonym for `ARG_MIN`
+| b | PERCENTILE_CONT(value, fraction [ RESPECT NULLS &#124; IGNORE NULLS ] ) OVER windowSpec | Synonym for standard `PERCENTILE_CONT` where `PERCENTILE_CONT(value, fraction) OVER (ORDER BY value)` is equivalent to standard `PERCENTILE_CONT(fraction) WITHIN GROUP (ORDER BY value)`
+| b | PERCENTILE_DISC(value, fraction [ RESPECT NULLS &#124; IGNORE NULLS ] ) OVER windowSpec | Synonym for standard `PERCENTILE_DISC` where `PERCENTILE_DISC(value, fraction) OVER (ORDER BY value)` is equivalent to standard `PERCENTILE_DISC(fraction) WITHIN GROUP (ORDER BY value)`
 | b p | STRING_AGG( [ ALL &#124; DISTINCT ] value [, separator] [ ORDER BY orderItem [, orderItem ]* ] ) | Synonym for `LISTAGG`
 
 Usage Examples:

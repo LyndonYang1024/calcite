@@ -31,7 +31,7 @@ import org.immutables.value.Value;
  * merely returns its input, converts the node into its child.
  *
  * <p>For example, <code>Project(ArrayReader(a), {$input0})</code> becomes
- * <code>ArrayReader(a)</code>.</p>
+ * <code>ArrayReader(a)</code>.
  *
  * @see CalcRemoveRule
  * @see ProjectMergeRule
@@ -67,7 +67,7 @@ public class ProjectRemoveRule
               childProject.getInput(), childProject.getProjects(),
               project.getRowType());
     }
-    stripped = convert(stripped, project.getConvention());
+    stripped = convert(call.getPlanner(), stripped, project.getConvention());
     call.transformTo(stripped);
   }
 

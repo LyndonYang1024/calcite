@@ -98,6 +98,8 @@ import java.util.Objects;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 import static org.apache.calcite.adapter.enumerable.EnumUtils.generateCollatorExpression;
 import static org.apache.calcite.linq4j.tree.ExpressionType.Add;
 import static org.apache.calcite.linq4j.tree.ExpressionType.Divide;
@@ -111,16 +113,28 @@ import static org.apache.calcite.linq4j.tree.ExpressionType.Negate;
 import static org.apache.calcite.linq4j.tree.ExpressionType.NotEqual;
 import static org.apache.calcite.linq4j.tree.ExpressionType.Subtract;
 import static org.apache.calcite.linq4j.tree.ExpressionType.UnaryPlus;
+import static org.apache.calcite.sql.fun.SqlInternalOperators.LITERAL_AGG;
 import static org.apache.calcite.sql.fun.SqlInternalOperators.THROW_UNLESS;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.ACOSH;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_AGG;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_COMPACT;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_CONCAT;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_CONCAT_AGG;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_CONTAINS;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_DISTINCT;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_EXCEPT;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_INTERSECT;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_LENGTH;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_MAX;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_MIN;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_REPEAT;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_REVERSE;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_SIZE;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_TO_STRING;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.ARRAY_UNION;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.ASINH;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.ATANH;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.BOOL_AND;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.BOOL_OR;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.CHAR;
@@ -165,6 +179,7 @@ import static org.apache.calcite.sql.fun.SqlLibraryOperators.LOG;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.LOGICAL_AND;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.LOGICAL_OR;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.LPAD;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.MAP_ENTRIES;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.MAP_KEYS;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.MAP_VALUES;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.MAX_BY;
@@ -193,6 +208,7 @@ import static org.apache.calcite.sql.fun.SqlLibraryOperators.SHA1;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.SHA256;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.SHA512;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.SINH;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.SORT_ARRAY;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.SOUNDEX;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.SPACE;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.SPLIT;
@@ -476,7 +492,7 @@ public class RexImpTable {
       map.put(CONCAT, new ConcatImplementor());
       defineMethod(CONCAT_FUNCTION, BuiltInMethod.MULTI_STRING_CONCAT.method,
           NullPolicy.STRICT);
-      defineMethod(CONCAT2, BuiltInMethod.STRING_CONCAT.method, NullPolicy.STRICT);
+      defineMethod(CONCAT2, BuiltInMethod.STRING_CONCAT_WITH_NULL.method, NullPolicy.ALL);
       defineMethod(OVERLAY, BuiltInMethod.OVERLAY.method, NullPolicy.STRICT);
       defineMethod(POSITION, BuiltInMethod.POSITION.method, NullPolicy.STRICT);
       defineMethod(ASCII, BuiltInMethod.ASCII.method, NullPolicy.STRICT);
@@ -529,9 +545,12 @@ public class RexImpTable {
       map.put(RAND_INTEGER, new RandIntegerImplementor());
 
       defineMethod(ACOS, "acos", NullPolicy.STRICT);
+      defineMethod(ACOSH, "acosh", NullPolicy.STRICT);
       defineMethod(ASIN, "asin", NullPolicy.STRICT);
+      defineMethod(ASINH, "asinh", NullPolicy.STRICT);
       defineMethod(ATAN, "atan", NullPolicy.STRICT);
       defineMethod(ATAN2, "atan2", NullPolicy.STRICT);
+      defineMethod(ATANH, "atanh", NullPolicy.STRICT);
       defineMethod(CBRT, "cbrt", NullPolicy.STRICT);
       defineMethod(COS, "cos", NullPolicy.STRICT);
       defineMethod(COSH, "cosh", NullPolicy.STRICT);
@@ -672,19 +691,28 @@ public class RexImpTable {
       // Multisets & arrays
       defineMethod(CARDINALITY, BuiltInMethod.COLLECTION_SIZE.method,
           NullPolicy.STRICT);
-      defineMethod(ARRAY_LENGTH, BuiltInMethod.COLLECTION_SIZE.method,
-          NullPolicy.STRICT);
       defineMethod(SLICE, BuiltInMethod.SLICE.method, NullPolicy.NONE);
       defineMethod(ELEMENT, BuiltInMethod.ELEMENT.method, NullPolicy.STRICT);
       defineMethod(STRUCT_ACCESS, BuiltInMethod.STRUCT_ACCESS.method, NullPolicy.ANY);
       defineMethod(MEMBER_OF, BuiltInMethod.MEMBER_OF.method, NullPolicy.NONE);
+      defineMethod(ARRAY_COMPACT, BuiltInMethod.ARRAY_COMPACT.method, NullPolicy.STRICT);
+      defineMethod(ARRAY_CONTAINS, BuiltInMethod.LIST_CONTAINS.method, NullPolicy.ANY);
       defineMethod(ARRAY_DISTINCT, BuiltInMethod.ARRAY_DISTINCT.method, NullPolicy.STRICT);
+      defineMethod(ARRAY_EXCEPT, BuiltInMethod.ARRAY_EXCEPT.method, NullPolicy.ANY);
+      defineMethod(ARRAY_INTERSECT, BuiltInMethod.ARRAY_INTERSECT.method, NullPolicy.ANY);
+      defineMethod(ARRAY_LENGTH, BuiltInMethod.COLLECTION_SIZE.method, NullPolicy.STRICT);
+      defineMethod(ARRAY_MAX, BuiltInMethod.ARRAY_MAX.method, NullPolicy.STRICT);
+      defineMethod(ARRAY_MIN, BuiltInMethod.ARRAY_MIN.method, NullPolicy.STRICT);
       defineMethod(ARRAY_REPEAT, BuiltInMethod.ARRAY_REPEAT.method, NullPolicy.NONE);
       defineMethod(ARRAY_REVERSE, BuiltInMethod.ARRAY_REVERSE.method, NullPolicy.STRICT);
       defineMethod(ARRAY_SIZE, BuiltInMethod.COLLECTION_SIZE.method, NullPolicy.STRICT);
+      defineMethod(ARRAY_TO_STRING, "arrayToString", NullPolicy.STRICT);
+      defineMethod(ARRAY_UNION, BuiltInMethod.ARRAY_UNION.method, NullPolicy.ANY);
+      defineMethod(MAP_ENTRIES, BuiltInMethod.MAP_ENTRIES.method, NullPolicy.STRICT);
       defineMethod(MAP_KEYS, BuiltInMethod.MAP_KEYS.method, NullPolicy.STRICT);
       defineMethod(MAP_VALUES, BuiltInMethod.MAP_VALUES.method, NullPolicy.STRICT);
       map.put(ARRAY_CONCAT, new ArrayConcatImplementor());
+      map.put(SORT_ARRAY, new SortArrayImplementor());
       final MethodImplementor isEmptyImplementor =
           new MethodImplementor(BuiltInMethod.IS_EMPTY.method, NullPolicy.NONE,
               false);
@@ -879,6 +907,7 @@ public class RexImpTable {
           constructorSupplier(GroupingImplementor.class);
       aggMap.put(GROUPING, grouping);
       aggMap.put(GROUPING_ID, grouping);
+      aggMap.put(LITERAL_AGG, constructorSupplier(LiteralAggImplementor.class));
       winAggMap.put(RANK, constructorSupplier(RankImplementor.class));
       winAggMap.put(DENSE_RANK, constructorSupplier(DenseRankImplementor.class));
       winAggMap.put(ROW_NUMBER, constructorSupplier(RowNumberImplementor.class));
@@ -1693,6 +1722,27 @@ public class RexImpTable {
         }
       }
       return e != null ? e : Expressions.constant(0, info.returnType());
+    }
+  }
+
+  /** Implementor for the {@code LITERAL_AGG} aggregate function. */
+  static class LiteralAggImplementor implements AggImplementor {
+    @Override public List<Type> getStateType(AggContext info) {
+      return ImmutableList.of();
+    }
+
+    @Override public void implementReset(AggContext info, AggResetContext reset) {
+    }
+
+    @Override public void implementAdd(AggContext info, AggAddContext add) {
+    }
+
+    @Override public Expression implementResult(AggContext info,
+        AggResultContext result) {
+      checkArgument(info.aggregation().kind == SqlKind.LITERAL_AGG);
+      checkArgument(result.call().rexList.size() == 1);
+      final RexNode rexNode = result.call().rexList.get(0);
+      return result.resultTranslator().translate(rexNode);
     }
   }
 
@@ -3027,6 +3077,27 @@ public class RexImpTable {
         final RexCall call, final List<Expression> argValueList) {
       assert call.getOperands().size() == 1;
       return argValueList.get(0);
+    }
+  }
+
+  /** Implementor for sort_array. */
+  private static class SortArrayImplementor extends AbstractRexCallImplementor {
+    SortArrayImplementor() {
+      super("sort_array", NullPolicy.STRICT, false);
+    }
+
+    @Override Expression implementSafe(RexToLixTranslator translator,
+        RexCall call, List<Expression> argValueList) {
+      if (argValueList.size() == 2) {
+        return Expressions.call(
+            BuiltInMethod.SORT_ARRAY.method,
+            argValueList);
+      } else {
+        return Expressions.call(
+            BuiltInMethod.SORT_ARRAY.method,
+            argValueList.get(0),
+            Expressions.constant(true));
+      }
     }
   }
 

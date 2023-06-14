@@ -217,6 +217,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 import static org.apache.calcite.linq4j.Nullness.castNonNull;
 import static org.apache.calcite.runtime.FlatLists.append;
+import static org.apache.calcite.sql.SqlUtil.containsIn;
 import static org.apache.calcite.sql.SqlUtil.stripAs;
 
 import static java.util.Objects.requireNonNull;
@@ -959,31 +960,6 @@ public class SqlToRelConverter {
   }
 
   /**
-   * Returns whether a given node contains a {@link SqlInOperator}.
-   *
-   * @param node a RexNode tree
-   */
-  private static boolean containsInOperator(
-      SqlNode node) {
-    try {
-      SqlVisitor<Void> visitor =
-          new SqlBasicVisitor<Void>() {
-            @Override public Void visit(SqlCall call) {
-              if (call.getOperator() instanceof SqlInOperator) {
-                throw new Util.FoundOne(call);
-              }
-              return super.visit(call);
-            }
-          };
-      node.accept(visitor);
-      return false;
-    } catch (Util.FoundOne e) {
-      Util.swallow(e, null);
-      return true;
-    }
-  }
-
-  /**
    * Push down all the NOT logical operators into any IN/NOT IN operators.
    *
    * @param scope Scope where {@code sqlNode} occurs
@@ -992,7 +968,7 @@ public class SqlToRelConverter {
    */
   private static SqlNode pushDownNotForIn(SqlValidatorScope scope,
       SqlNode sqlNode) {
-    if (!(sqlNode instanceof SqlCall) || !containsInOperator(sqlNode)) {
+    if (!(sqlNode instanceof SqlCall) || !containsIn(sqlNode)) {
       return sqlNode;
     }
     final SqlCall sqlCall = (SqlCall) sqlNode;
@@ -1282,11 +1258,11 @@ public class SqlToRelConverter {
                 null,
                 ImmutableList.of(
                     AggregateCall.create(SqlStdOperatorTable.COUNT, false,
-                        false, false, ImmutableList.of(), -1, null,
-                        RelCollations.EMPTY, longType, null),
+                        false, false, ImmutableList.of(), ImmutableList.of(),
+                        -1, null, RelCollations.EMPTY, longType, null),
                     AggregateCall.create(SqlStdOperatorTable.COUNT, false,
-                        false, false, args, -1, null,
-                        RelCollations.EMPTY, longType, null)));
+                        false, false, ImmutableList.of(), args,
+                        -1, null, RelCollations.EMPTY, longType, null)));
         LogicalJoin join =
             LogicalJoin.create(bb.root(), aggregate, ImmutableList.of(),
                 rexBuilder.makeLiteral(true), ImmutableSet.of(), JoinRelType.INNER);
@@ -2316,16 +2292,16 @@ public class SqlToRelConverter {
    * @param bb   Scope within which to resolve identifiers
    * @param from FROM clause of a query. Examples include:
    *
-   *             <ul>
-   *             <li>a single table ("SALES.EMP"),
-   *             <li>an aliased table ("EMP AS E"),
-   *             <li>a list of tables ("EMP, DEPT"),
-   *             <li>an ANSI Join expression ("EMP JOIN DEPT ON EMP.DEPTNO =
-   *             DEPT.DEPTNO"),
-   *             <li>a VALUES clause ("VALUES ('Fred', 20)"),
-   *             <li>a query ("(SELECT * FROM EMP WHERE GENDER = 'F')"),
-   *             <li>or any combination of the above.
-   *             </ul>
+   * <ul>
+   * <li>a single table ("SALES.EMP"),
+   * <li>an aliased table ("EMP AS E"),
+   * <li>a list of tables ("EMP, DEPT"),
+   * <li>an ANSI Join expression ("EMP JOIN DEPT ON EMP.DEPTNO = DEPT.DEPTNO"),
+   * <li>a VALUES clause ("VALUES ('Fred', 20)"),
+   * <li>a query ("(SELECT * FROM EMP WHERE GENDER = 'F')"),
+   * <li>or any combination of the above.
+   * </ul>
+   *
    * @param fieldNames Field aliases, usually come from AS clause, or null
    */
   protected void convertFrom(
@@ -6216,6 +6192,7 @@ public class SqlToRelConverter {
               distinct,
               approximate,
               ignoreNulls,
+              ImmutableList.of(),
               args,
               filterArg,
               distinctKeys,

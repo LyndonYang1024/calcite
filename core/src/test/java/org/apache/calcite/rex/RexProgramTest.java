@@ -73,6 +73,8 @@ import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.hasToString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -149,16 +151,16 @@ class RexProgramTest extends RexProgramTestBase {
    */
   @Test void testSimplifyCondition() {
     final RexProgram program = createProg(3).getProgram(false);
-    assertThat(program.toString(),
-        is("(expr#0..1=[{inputs}], expr#2=[+($0, 1)], expr#3=[77], "
+    assertThat(program,
+        hasToString("(expr#0..1=[{inputs}], expr#2=[+($0, 1)], expr#3=[77], "
             + "expr#4=[+($0, $1)], expr#5=[+($0, 1)], expr#6=[+($0, $t5)], "
             + "expr#7=[+($t4, $t2)], expr#8=[5], expr#9=[>($t2, $t8)], "
             + "expr#10=[true], expr#11=[IS NOT NULL($t5)], expr#12=[false], "
             + "expr#13=[null:BOOLEAN], expr#14=[CASE($t9, $t10, $t11, $t12, $t13)], "
             + "expr#15=[NOT($t14)], a=[$t7], b=[$t6], $condition=[$t15])"));
 
-    assertThat(program.normalize(rexBuilder, simplify).toString(),
-        is("(expr#0..1=[{inputs}], expr#2=[+($t0, $t1)], expr#3=[1], "
+    assertThat(program.normalize(rexBuilder, simplify),
+        hasToString("(expr#0..1=[{inputs}], expr#2=[+($t0, $t1)], expr#3=[1], "
             + "expr#4=[+($t0, $t3)], expr#5=[+($t2, $t4)], "
             + "expr#6=[+($t0, $t4)], expr#7=[5], expr#8=[<=($t4, $t7)], "
             + "a=[$t5], b=[$t6], $condition=[$t8])"));
@@ -169,8 +171,8 @@ class RexProgramTest extends RexProgramTestBase {
    */
   @Test void testSimplifyCondition2() {
     final RexProgram program = createProg(4).getProgram(false);
-    assertThat(program.toString(),
-        is("(expr#0..1=[{inputs}], expr#2=[+($0, 1)], expr#3=[77], "
+    assertThat(program,
+        hasToString("(expr#0..1=[{inputs}], expr#2=[+($0, 1)], expr#3=[77], "
             + "expr#4=[+($0, $1)], expr#5=[+($0, 1)], expr#6=[+($0, $t5)], "
             + "expr#7=[+($t4, $t2)], expr#8=[5], expr#9=[>($t2, $t8)], "
             + "expr#10=[true], expr#11=[IS NOT NULL($t5)], expr#12=[false], "
@@ -178,8 +180,8 @@ class RexProgramTest extends RexProgramTestBase {
             + "expr#15=[NOT($t14)], expr#16=[IS TRUE($t15)], a=[$t7], b=[$t6], "
             + "$condition=[$t16])"));
 
-    assertThat(program.normalize(rexBuilder, simplify).toString(),
-        is("(expr#0..1=[{inputs}], expr#2=[+($t0, $t1)], expr#3=[1], "
+    assertThat(program.normalize(rexBuilder, simplify),
+        hasToString("(expr#0..1=[{inputs}], expr#2=[+($t0, $t1)], expr#3=[1], "
             + "expr#4=[+($t0, $t3)], expr#5=[+($t2, $t4)], "
             + "expr#6=[+($t0, $t4)], expr#7=[5], expr#8=[<=($t4, $t7)], "
             + "a=[$t5], b=[$t6], $condition=[$t8])"));
@@ -724,8 +726,8 @@ class RexProgramTest extends RexProgramTestBase {
     final int nodeCount = cnf.nodeCount();
     assertThat((n + 1) * (int) Math.pow(2, n) + 1, equalTo(nodeCount));
     if (n == 3) {
-      assertThat(cnf.toString(),
-          equalTo("AND(OR(?0.x0, ?0.x1, ?0.x2), OR(?0.x0, ?0.x1, ?0.y2),"
+      assertThat(cnf,
+          hasToString("AND(OR(?0.x0, ?0.x1, ?0.x2), OR(?0.x0, ?0.x1, ?0.y2),"
               + " OR(?0.x0, ?0.y1, ?0.x2), OR(?0.x0, ?0.y1, ?0.y2),"
               + " OR(?0.y0, ?0.x1, ?0.x2), OR(?0.y0, ?0.x1, ?0.y2),"
               + " OR(?0.y0, ?0.y1, ?0.x2), OR(?0.y0, ?0.y1, ?0.y2))"));
@@ -1089,9 +1091,8 @@ class RexProgramTest extends RexProgramTestBase {
 
     // as previous, using simplifyFilterPredicates
     assertThat(simplify
-            .simplifyFilterPredicates(args)
-            .toString(),
-        equalTo("AND(=(?0.a, 1), =(?0.b, 1))"));
+            .simplifyFilterPredicates(args),
+        hasToString("AND(=(?0.a, 1), =(?0.b, 1))"));
 
     // "a = 1 and a = 10" is always false
     final ImmutableList<RexNode> args2 =
@@ -1521,8 +1522,8 @@ class RexProgramTest extends RexProgramTestBase {
     // TODO: "b = b" would be the best simplification.
     final RexNode simplified =
         this.simplify.simplifyUnknownAs(neOrEq, RexUnknownAs.UNKNOWN);
-    assertThat(simplified.toString(),
-        equalTo("OR(IS NOT NULL(?0.b), null)"));
+    assertThat(simplified,
+        hasToString("OR(IS NOT NULL(?0.b), null)"));
 
     // "a is null or a is not null" ==> "true"
     checkSimplifyFilter(
@@ -1711,6 +1712,126 @@ class RexProgramTest extends RexProgramTestBase {
     final String expanded = "AND(IS NOT NULL($0), AND(>($0, 3), <($0, 10)))";
     checkSimplify(expr, simplified)
         .expandedSearch(expanded);
+  }
+
+  @Test void testSimplifyRange8() {
+    final RexNode aRef = input(tInt(true), 0);
+    // a not in (1.0, 2.0)
+    RexNode expr =
+        not(
+            in(aRef,
+                literal(new BigDecimal("1.0")),
+                literal(new BigDecimal("2.0"))));
+    final String simplified = "SEARCH($0, "
+        + "Sarg[(-\u221e..1.0:DECIMAL(2, 1)),"
+        + " (1.0:DECIMAL(2, 1)..2.0:DECIMAL(2, 1)),"
+        + " (2.0:DECIMAL(2, 1)..+\u221e)]:DECIMAL(2, 1))";
+    checkSimplify(expr, simplified);
+
+    // The following identical to previous, and simplifies to the same:
+    //   a < 1.0 or (1.0 < a and a < 2.0) or 2.0 < a
+    RexNode expr2 =
+        or(lt(aRef, literal(new BigDecimal("1.0"))),
+            and(lt(literal(new BigDecimal("1.0")), aRef),
+                lt(aRef, literal(new BigDecimal("2.0")))),
+            lt(literal(new BigDecimal("2.0")), aRef));
+    checkSimplify(expr2, simplified);
+
+    // Identical to previous, except one "2.0" is "2":
+    //   a < 1.0 or (1.0 < a and a < 2.0) or 2.00 < a
+    RexNode expr3 =
+        or(lt(aRef, literal(new BigDecimal("1.0"))),
+            and(lt(literal(new BigDecimal("1.0")), aRef),
+                lt(aRef, literal(new BigDecimal("2.0")))),
+            lt(literal(new BigDecimal("2")), aRef));
+    final String simplified3 = "SEARCH($0, "
+        + "Sarg[(-\u221e..1.0:DECIMAL(11, 1)),"
+        + " (1.0:DECIMAL(11, 1)..2.0:DECIMAL(11, 1)),"
+        + " (2:DECIMAL(11, 1)..+\u221e)]:DECIMAL(11, 1))";
+    checkSimplify(expr3, simplified3);
+  }
+
+  @Test void testSimplifyRange9() {
+    // Contiguous ranges can be merged:
+    //   a > 1 and <= 2 or a > 2.0 and a < 3
+    // becomes
+    //   a > 1 and a < 3
+    final RexNode aRef = input(tInt(true), 0);
+    RexNode expr =
+        or(
+            and(gt(aRef, literal(1)),
+                le(aRef, literal(2))),
+            and(gt(aRef, literal(new BigDecimal("2.0"))),
+                lt(aRef, literal(3))));
+    final String simplified = "SEARCH($0, "
+        + "Sarg[(1:DECIMAL(11, 1)..3:DECIMAL(11, 1))]:DECIMAL(11, 1))";
+    checkSimplify(expr, simplified);
+  }
+
+  /** Unit test for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-5759">[CALCITE-5759]
+   * 'SEARCH(1, Sarg[IS NOT NULL])' should be simplified to 'TRUE'</a>. */
+  @Test void testSimplifySearchWithSpecialSargIsNotNull() {
+    // "SEARCH(1, Sarg[IS NOT NULL])" simplifies to "true"
+    RexNode intLiteral =
+        rexBuilder.makeLiteral(1, typeFactory.createSqlType(SqlTypeName.INTEGER));
+    final RangeSet<Integer> setNone = ImmutableRangeSet.of();
+    final RangeSet<Integer> setAll = setNone.complement();
+    final Sarg<Integer> sarg =
+        Sarg.of(RexUnknownAs.FALSE, setAll);
+    RexNode rexNode =
+        rexBuilder.makeCall(SqlStdOperatorTable.SEARCH, intLiteral,
+            rexBuilder.makeSearchArgumentLiteral(sarg, intLiteral.getType()));
+    checkSimplify(rexNode, "true");
+  }
+
+  /** Unit test for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-5759">[CALCITE-5759]
+   * 'SEARCH(1, Sarg[IS NOT NULL])' should be simplified to 'TRUE'</a>. */
+  @Test void testSimplifySearchWithSpecialSargIsNull() {
+    // "SEARCH(1, Sarg[IS NULL])" simplifies to "false"
+    RexNode intLiteral =
+        rexBuilder.makeLiteral(1, typeFactory.createSqlType(SqlTypeName.INTEGER));
+    final RangeSet<Integer> setNone = ImmutableRangeSet.of();
+    final Sarg<Integer> sarg =
+        Sarg.of(RexUnknownAs.TRUE, setNone);
+    RexNode rexNode =
+        rexBuilder.makeCall(SqlStdOperatorTable.SEARCH, intLiteral,
+            rexBuilder.makeSearchArgumentLiteral(sarg, intLiteral.getType()));
+    checkSimplify(rexNode, "false");
+  }
+
+  /** Unit test for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-5759">[CALCITE-5759]
+   * 'SEARCH(1, Sarg[IS NOT NULL])' should be simplified to 'TRUE'</a>. */
+  @Test void testSimplifySearchWithSpecialSargEqual() {
+    // "SEARCH(1, Sarg[=])" simplifies to "true"
+    RexNode intLiteral =
+        rexBuilder.makeLiteral(1, typeFactory.createSqlType(SqlTypeName.INTEGER));
+    final RangeSet<Integer> setNone = ImmutableRangeSet.of();
+    final RangeSet<Integer> setAll = setNone.complement();
+    final Sarg<Integer> sarg =
+        Sarg.of(RexUnknownAs.UNKNOWN, setAll);
+    RexNode rexNode =
+        rexBuilder.makeCall(SqlStdOperatorTable.SEARCH, intLiteral,
+            rexBuilder.makeSearchArgumentLiteral(sarg, intLiteral.getType()));
+    checkSimplify(rexNode, "true");
+  }
+
+  /** Unit test for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-5759">[CALCITE-5759]
+   * 'SEARCH(1, Sarg[IS NOT NULL])' should be simplified to 'TRUE'</a>. */
+  @Test void testSimplifySearchWithSpecialSargNotEqual() {
+    // "SEARCH(1, Sarg[<>])" simplifies to "false"
+    RexNode intLiteral =
+        rexBuilder.makeLiteral(1, typeFactory.createSqlType(SqlTypeName.INTEGER));
+    final RangeSet<Integer> setNone = ImmutableRangeSet.of();
+    final Sarg<Integer> sarg =
+        Sarg.of(RexUnknownAs.UNKNOWN, setNone);
+    RexNode rexNode =
+        rexBuilder.makeCall(SqlStdOperatorTable.SEARCH, intLiteral,
+            rexBuilder.makeSearchArgumentLiteral(sarg, intLiteral.getType()));
+    checkSimplify(rexNode, "false");
   }
 
   /** Unit test for
@@ -2864,7 +2985,7 @@ class RexProgramTest extends RexProgramTestBase {
     final RexCall result = (RexCall) simplify(isFalse);
     assertThat(result.getType().isNullable(), is(false));
     assertThat(result.getOperator(), is(SqlStdOperatorTable.IS_FALSE));
-    assertThat(result.getOperands().size(), is(1));
+    assertThat(result.getOperands(), hasSize(1));
     assertThat(result.getOperands().get(0), is(booleanInput));
 
     // Make sure that IS_FALSE(IS_FALSE(nullable boolean)) != IS_TRUE(nullable boolean)
@@ -2874,7 +2995,7 @@ class RexProgramTest extends RexProgramTestBase {
     final RexCall result2 = (RexCall) simplify(isFalseIsFalse);
     assertThat(result2.getType().isNullable(), is(false));
     assertThat(result2.getOperator(), is(SqlStdOperatorTable.IS_NOT_FALSE));
-    assertThat(result2.getOperands().size(), is(1));
+    assertThat(result2.getOperands(), hasSize(1));
     assertThat(result2.getOperands().get(0), is(booleanInput));
   }
 
@@ -2959,7 +3080,7 @@ class RexProgramTest extends RexProgramTestBase {
   private void checkSarg(String message, Sarg sarg,
       Matcher<Integer> complexityMatcher, Matcher<String> stringMatcher) {
     assertThat(message, sarg.complexity(), complexityMatcher);
-    assertThat(message, sarg.toString(), stringMatcher);
+    assertThat(message, sarg, hasToString(stringMatcher));
   }
 
   /** Tests {@link Sarg#complexity()}. */
@@ -3022,6 +3143,22 @@ class RexProgramTest extends RexProgramTestBase {
                 .add(Range.closed(10, 20))
                 .build()),
         is(2), is("Sarg[[3..8], [10..20]]"));
+  }
+
+  /** Unit test for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-5722">[CALCITE-5722]
+   * {@code Sarg.isComplementedPoints} fails with anti-points which are equal
+   * under {@code compareTo} but not {@code equals}</a>. */
+  @SuppressWarnings("UnstableApiUsage")
+  @Test void testSargAntiPoint() {
+    final Sarg<BigDecimal> sarg =
+        Sarg.of(RexUnknownAs.UNKNOWN,
+            // Create anti-point around 1, with different scales
+            ImmutableRangeSet.<BigDecimal>builder()
+                .add(Range.lessThan(new BigDecimal("1")))
+                .add(Range.greaterThan(new BigDecimal("1.00000000000")))
+                .build());
+    assertThat(sarg.isComplementedPoints(), is(true));
   }
 
   @Test void testInterpreter() {
@@ -3146,15 +3283,15 @@ class RexProgramTest extends RexProgramTestBase {
    * Computing digest of IN expressions leads to Exceptions</a>. */
   @Test void testInDigest() {
     RexNode e = in(vInt(), literal(1), literal(2));
-    assertThat(e.toString(), is("SEARCH(?0.int0, Sarg[1, 2])"));
+    assertThat(e, hasToString("SEARCH(?0.int0, Sarg[1, 2])"));
   }
 
   /** Tests that {@link #in} does not generate SEARCH if any of the arguments
    * are not literals. */
   @Test void testInDigest2() {
     RexNode e = in(vInt(0), literal(1), plus(literal(2), vInt(1)));
-    assertThat(e.toString(),
-        is("OR(=(?0.int0, 1), =(?0.int0, +(2, ?0.int1)))"));
+    assertThat(e,
+        hasToString("OR(=(?0.int0, 1), =(?0.int0, +(2, ?0.int1)))"));
   }
 
   /** Unit test for

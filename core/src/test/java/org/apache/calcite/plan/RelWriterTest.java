@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 package org.apache.calcite.plan;
-
 import org.apache.calcite.adapter.java.ReflectiveSchema;
 import org.apache.calcite.avatica.util.TimeUnit;
 import org.apache.calcite.plan.volcano.VolcanoPlanner;
@@ -106,6 +105,7 @@ import static org.apache.calcite.test.Matchers.isLinux;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.hasToString;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import static java.util.Objects.requireNonNull;
@@ -544,10 +544,12 @@ class RelWriterTest {
                   null,
                   ImmutableList.of(
                       AggregateCall.create(SqlStdOperatorTable.COUNT,
-                          true, false, false, ImmutableList.of(1), -1, null,
+                          true, false, false, ImmutableList.of(),
+                          ImmutableList.of(1), -1, null,
                           RelCollations.EMPTY, bigIntType, "c"),
                       AggregateCall.create(SqlStdOperatorTable.COUNT,
-                          false, false, false, ImmutableList.of(), -1, null,
+                          false, false, false, ImmutableList.of(),
+                          ImmutableList.of(), -1, null,
                           RelCollations.EMPTY, bigIntType, "d")));
           aggregate.explain(writer);
           return writer.asString();
@@ -786,7 +788,7 @@ class RelWriterTest {
     final RelJson relJson = RelJson.create()
         .withInputTranslator(RelWriterTest::translateInput);
     final RexNode e = relJson.toRex(cluster, o);
-    assertThat(e.toString(), is(matcher));
+    assertThat(e, hasToString(matcher));
   }
 
   /** Intended as an instance of {@link RelJson.InputTranslator},
@@ -906,6 +908,18 @@ class RelWriterTest {
 
     RexNode timeNode = rexBuilder.makeBetween(t2, t1, t3);
     consumer.accept(timeNode);
+
+    // Test Calcite TimestampString
+    final TimestampString ts1 = TimestampString.fromMillisSinceEpoch(79056000000L);
+    final TimestampString ts2 = TimestampString.fromMillisSinceEpoch(184982400000L);
+    final TimestampString ts3 = TimestampString.fromMillisSinceEpoch(184982400000L);
+
+    final RexLiteral tsr1 = rexBuilder.makeTimestampLiteral(ts1, 0);
+    final RexLiteral tsr2 = rexBuilder.makeTimestampLiteral(ts2, 0);
+    final RexLiteral tsr3 = rexBuilder.makeTimestampLiteral(ts3, 0);
+    RexNode tsNode =
+        rexBuilder.makeIn(tsr1, ImmutableList.of(tsr2, tsr3));
+    consumer.accept(tsNode);
 
     // Test Calcite NlsString
     final NlsString nls1 = new NlsString("one", null, null);
@@ -1098,7 +1112,7 @@ class RelWriterTest {
   void testCorrelateQuery(SqlExplainFormat format) {
     final Holder<RexCorrelVariable> v = Holder.empty();
     final Function<RelBuilder, RelNode> relFn = b -> b.scan("EMP")
-        .variable(v)
+        .variable(v::set)
         .scan("DEPT")
         .filter(b.equals(b.field(0), b.field(v.get(), "DEPTNO")))
         .correlate(JoinRelType.INNER, v.get().id, b.field(2, 0, "DEPTNO"))

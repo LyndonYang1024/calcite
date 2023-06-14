@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 package org.apache.calcite.test;
-
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.avatica.util.Quoting;
 import org.apache.calcite.avatica.util.TimeUnit;
@@ -85,6 +84,7 @@ import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.hasToString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -106,10 +106,8 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
   //~ Static fields/initializers ---------------------------------------------
 
   // CHECKSTYLE: IGNORE 1
-  /**
-   * @deprecated Deprecated so that usages of this constant will show up in
-   * yellow in Intellij and maybe someone will fix them.
-   */
+  /** @deprecated Deprecated so that usages of this constant will show up in
+   * yellow in Intellij and maybe someone will fix them. */
   protected static final boolean TODO = false;
   private static final String ANY = "(?s).*";
 
@@ -2760,10 +2758,9 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
     invalidCodes.forEach(invalidConsumer);
   }
 
-  /** Checks parsing of built-in functions that accept time unit
-   *  Checks WEEK(WEEKDAY)
-   * <p>Override if your parser supports more such functions. */
-  @Test void checkWeekdayCustomTimeFrames() {
+  /** Tests parsing of built-in functions that accept time unit
+   * "WEEK(WEEKDAY)". */
+  @Test void testWeekdayCustomTimeFrames() {
     SqlValidatorFixture f = fixture()
         .withOperatorTable(operatorTableFor(SqlLibrary.BIG_QUERY));
 
@@ -4158,34 +4155,30 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
   /** Unit test for
    * {@link org.apache.calcite.sql.validate.SqlValidatorUtil#rollup}. */
   @Test void testRollupBitSets() {
-    assertThat(rollup(ImmutableBitSet.of(1), ImmutableBitSet.of(3)).toString(),
-        equalTo("[{1, 3}, {1}, {}]"));
-    assertThat(rollup(ImmutableBitSet.of(1), ImmutableBitSet.of(3, 4))
-            .toString(),
-        equalTo("[{1, 3, 4}, {1}, {}]"));
-    assertThat(rollup(ImmutableBitSet.of(1, 3), ImmutableBitSet.of(4))
-            .toString(),
-        equalTo("[{1, 3, 4}, {1, 3}, {}]"));
-    assertThat(rollup(ImmutableBitSet.of(1, 4), ImmutableBitSet.of(3))
-            .toString(),
-        equalTo("[{1, 3, 4}, {1, 4}, {}]"));
+    assertThat(rollup(ImmutableBitSet.of(1), ImmutableBitSet.of(3)),
+        hasToString("[{1, 3}, {1}, {}]"));
+    assertThat(rollup(ImmutableBitSet.of(1), ImmutableBitSet.of(3, 4)),
+        hasToString("[{1, 3, 4}, {1}, {}]"));
+    assertThat(rollup(ImmutableBitSet.of(1, 3), ImmutableBitSet.of(4)),
+        hasToString("[{1, 3, 4}, {1, 3}, {}]"));
+    assertThat(rollup(ImmutableBitSet.of(1, 4), ImmutableBitSet.of(3)),
+        hasToString("[{1, 3, 4}, {1, 4}, {}]"));
     // non-disjoint bit sets
-    assertThat(rollup(ImmutableBitSet.of(1, 4), ImmutableBitSet.of(3, 4))
-            .toString(),
-        equalTo("[{1, 3, 4}, {1, 4}, {}]"));
+    assertThat(rollup(ImmutableBitSet.of(1, 4), ImmutableBitSet.of(3, 4)),
+        hasToString("[{1, 3, 4}, {1, 4}, {}]"));
     // some bit sets are empty
     assertThat(
         rollup(ImmutableBitSet.of(1, 4), ImmutableBitSet.of(),
-            ImmutableBitSet.of(3, 4), ImmutableBitSet.of()).toString(),
-        equalTo("[{1, 3, 4}, {1, 4}, {}]"));
-    assertThat(rollup(ImmutableBitSet.of(1)).toString(),
-        equalTo("[{1}, {}]"));
+            ImmutableBitSet.of(3, 4), ImmutableBitSet.of()),
+        hasToString("[{1, 3, 4}, {1, 4}, {}]"));
+    assertThat(rollup(ImmutableBitSet.of(1)),
+        hasToString("[{1}, {}]"));
     // one empty bit set
-    assertThat(rollup(ImmutableBitSet.of()).toString(),
-        equalTo("[{}]"));
+    assertThat(rollup(ImmutableBitSet.of()),
+        hasToString("[{}]"));
     // no bit sets
-    assertThat(rollup().toString(),
-        equalTo("[{}]"));
+    assertThat(rollup(),
+        hasToString("[{}]"));
   }
 
   private ImmutableList<ImmutableBitSet> rollup(ImmutableBitSet... sets) {
@@ -4195,32 +4188,32 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
   /** Unit test for
    * {@link org.apache.calcite.sql.validate.SqlValidatorUtil#cube}. */
   @Test void testCubeBitSets() {
-    assertThat(cube(ImmutableBitSet.of(1), ImmutableBitSet.of(3)).toString(),
-        equalTo("[{1, 3}, {1}, {3}, {}]"));
-    assertThat(cube(ImmutableBitSet.of(1), ImmutableBitSet.of(3, 4)).toString(),
-        equalTo("[{1, 3, 4}, {1}, {3, 4}, {}]"));
-    assertThat(cube(ImmutableBitSet.of(1, 3), ImmutableBitSet.of(4)).toString(),
-        equalTo("[{1, 3, 4}, {1, 3}, {4}, {}]"));
-    assertThat(cube(ImmutableBitSet.of(1, 4), ImmutableBitSet.of(3)).toString(),
-        equalTo("[{1, 3, 4}, {1, 4}, {3}, {}]"));
+    assertThat(cube(ImmutableBitSet.of(1), ImmutableBitSet.of(3)),
+        hasToString("[{1, 3}, {1}, {3}, {}]"));
+    assertThat(cube(ImmutableBitSet.of(1), ImmutableBitSet.of(3, 4)),
+        hasToString("[{1, 3, 4}, {1}, {3, 4}, {}]"));
+    assertThat(cube(ImmutableBitSet.of(1, 3), ImmutableBitSet.of(4)),
+        hasToString("[{1, 3, 4}, {1, 3}, {4}, {}]"));
+    assertThat(cube(ImmutableBitSet.of(1, 4), ImmutableBitSet.of(3)),
+        hasToString("[{1, 3, 4}, {1, 4}, {3}, {}]"));
     // non-disjoint bit sets
     assertThat(
-        cube(ImmutableBitSet.of(1, 4), ImmutableBitSet.of(3, 4)).toString(),
-        equalTo("[{1, 3, 4}, {1, 4}, {3, 4}, {}]"));
+        cube(ImmutableBitSet.of(1, 4), ImmutableBitSet.of(3, 4)),
+        hasToString("[{1, 3, 4}, {1, 4}, {3, 4}, {}]"));
     // some bit sets are empty, and there are duplicates
     assertThat(
         cube(ImmutableBitSet.of(1, 4),
             ImmutableBitSet.of(),
             ImmutableBitSet.of(1, 4),
             ImmutableBitSet.of(3, 4),
-            ImmutableBitSet.of()).toString(),
-        equalTo("[{1, 3, 4}, {1, 4}, {3, 4}, {}]"));
-    assertThat(cube(ImmutableBitSet.of(1)).toString(),
-        equalTo("[{1}, {}]"));
-    assertThat(cube(ImmutableBitSet.of()).toString(),
-        equalTo("[{}]"));
-    assertThat(cube().toString(),
-        equalTo("[{}]"));
+            ImmutableBitSet.of()),
+        hasToString("[{1, 3, 4}, {1, 4}, {3, 4}, {}]"));
+    assertThat(cube(ImmutableBitSet.of(1)),
+        hasToString("[{1}, {}]"));
+    assertThat(cube(ImmutableBitSet.of()),
+        hasToString("[{}]"));
+    assertThat(cube(),
+        hasToString("[{}]"));
   }
 
   private ImmutableList<ImmutableBitSet> cube(ImmutableBitSet... sets) {
@@ -6541,6 +6534,64 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
         .fails("'PERCENTILE_DISC' requires precisely one ORDER BY key");
   }
 
+  @Test void testPercentileFunctionsBigQuery() {
+    final SqlOperatorTable opTable = operatorTableFor(SqlLibrary.BIG_QUERY);
+    final String sql = "select\n"
+        + " percentile_cont(sal, 0.25) over() as c,\n"
+        + " percentile_disc(sal, 0.5) over() as d\n"
+        + "from emp";
+    sql(sql)
+        .withConformance(SqlConformanceEnum.BIG_QUERY)
+        .withOperatorTable(opTable)
+        .type("RecordType(DOUBLE NOT NULL C, INTEGER NOT NULL D) NOT NULL");
+  }
+
+  @Test void testPercentileContBigQueryFraction() {
+    final SqlOperatorTable opTable = operatorTableFor(SqlLibrary.BIG_QUERY);
+    final String sql = "select\n"
+        + "^percentile_cont(sal, 1.5)^ over() as c\n"
+        + "from emp as x";
+    sql(sql)
+        .withConformance(SqlConformanceEnum.BIG_QUERY)
+        .withOperatorTable(opTable)
+        .fails("Argument to function 'PERCENTILE_CONT' must be a numeric "
+            + "literal between 0 and 1");
+  }
+
+  @Test void testPercentileContBigQueryAllowsNullTreatment() {
+    final SqlOperatorTable opTable = operatorTableFor(SqlLibrary.BIG_QUERY);
+    final String sql = "select\n"
+        + "percentile_cont(sal, 1 RESPECT NULLS) over() as c\n"
+        + "from emp";
+    sql(sql)
+        .withConformance(SqlConformanceEnum.BIG_QUERY)
+        .withOperatorTable(opTable)
+        .type("RecordType(DOUBLE NOT NULL C) NOT NULL");
+  }
+
+  @Test void testPercentileDiscBigQueryFraction() {
+    final SqlOperatorTable opTable = operatorTableFor(SqlLibrary.BIG_QUERY);
+    final String sql = "select\n"
+        + "^percentile_disc(sal, 1.5)^ over() as c\n"
+        + "from emp";
+    sql(sql)
+        .withConformance(SqlConformanceEnum.BIG_QUERY)
+        .withOperatorTable(opTable)
+        .fails("Argument to function 'PERCENTILE_DISC' must be a numeric "
+            + "literal between 0 and 1");
+  }
+
+  @Test void testPercentileDiscBigQueryAllowsNullTreatment() {
+    final SqlOperatorTable opTable = operatorTableFor(SqlLibrary.BIG_QUERY);
+    final String sql = "select\n"
+        + "percentile_disc(sal, 1 RESPECT NULLS) over() as c\n"
+        + "from emp";
+    sql(sql)
+        .withConformance(SqlConformanceEnum.BIG_QUERY)
+        .withOperatorTable(opTable)
+        .type("RecordType(INTEGER NOT NULL C) NOT NULL");
+  }
+
   @Test void testCorrelatingVariables() {
     // reference to unqualified correlating column
     sql("select * from emp where exists (\n"
@@ -8694,7 +8745,7 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
         + "CALL pre\n"
         + "ESCAPE -\n"
         + "NEW pre\n";
-    assertThat(b.toString(), is(expected));
+    assertThat(b, hasToString(expected));
   }
 
   /** Tests that it is an error to insert into the same column twice, even using
@@ -11338,7 +11389,7 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
     final SqlNode sqlNode = parser.parseExpression();
     final SqlNode validated = validator.validateParameterizedExpression(sqlNode, nameToTypeMap);
     final RelDataType resultType = validator.getValidatedNodeType(validated);
-    assertThat(resultType.toString(), is("INTEGER"));
+    assertThat(resultType, hasToString("INTEGER"));
   }
 
   @Test void testAccessingNestedFieldsOfNullableRecord() {

@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 package org.apache.calcite.test;
-
 import org.apache.calcite.DataContexts;
 import org.apache.calcite.adapter.clone.CloneSchema;
 import org.apache.calcite.adapter.generate.RangeTable;
@@ -160,6 +159,7 @@ import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.CoreMatchers.startsWith;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -474,8 +474,7 @@ public class JdbcTest {
     connection.close();
   }
 
-  /**
-   * <p>Test case for
+  /** Test case for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-3423">[CALCITE-3423]
    * Support using CAST operation and BOOLEAN type value in table macro</a>. */
   @Test void testTableMacroWithCastOrBoolean() throws SQLException {
@@ -561,25 +560,25 @@ public class JdbcTest {
   }
 
   /** Tests a JDBC connection that provides a model that contains a table
-   *  macro. */
+   * macro. */
   @Test void testTableMacroInModel() throws Exception {
     checkTableMacroInModel(Smalls.TableMacroFunction.class);
   }
 
   /** Tests a JDBC connection that provides a model that contains a table
-   *  macro defined as a static method. */
+   * macro defined as a static method. */
   @Test void testStaticTableMacroInModel() throws Exception {
     checkTableMacroInModel(Smalls.StaticTableMacroFunction.class);
   }
 
   /** Tests a JDBC connection that provides a model that contains a table
-   *  function. */
+   * function. */
   @Test void testTableFunctionInModel() throws Exception {
     checkTableFunctionInModel(Smalls.MyTableFunction.class);
   }
 
   /** Tests a JDBC connection that provides a model that contains a table
-   *  function defined as a static method. */
+   * function defined as a static method. */
   @Test void testStaticTableFunctionInModel() throws Exception {
     checkTableFunctionInModel(Smalls.TestStaticTableFunction.class);
   }
@@ -1577,7 +1576,7 @@ public class JdbcTest {
    * <p>With
    * <a href="https://issues.apache.org/jira/browse/CALCITE-127">[CALCITE-127]
    * EnumerableCalcRel can't support 3+ AND conditions</a>, the last condition
-   * is ignored and rows with deptno=10 are wrongly returned.</p>
+   * is ignored and rows with deptno=10 are wrongly returned.
    */
   @Test void testAnd3() {
     CalciteAssert.hr()
@@ -2607,9 +2606,9 @@ public class JdbcTest {
         + "              if (current.empid > current.deptno * 10) {\n"
         + "                case_when_value = \"y\";\n"
         + "              } else {\n"
-        + "                case_when_value = (String) null;\n"
+        + "                case_when_value = null;\n"
         + "              }\n"
-        + "              return case_when_value == null ? (String) null : org.apache.calcite"
+        + "              return case_when_value == null ? null : org.apache.calcite"
         + ".runtime.SqlFunctions.upper(case_when_value);";
     CalciteAssert.hr()
         .query(sql)
@@ -2631,9 +2630,9 @@ public class JdbcTest {
         + "              if (current.empid > current.deptno * 10) {\n"
         + "                case_when_value = current.name;\n"
         + "              } else {\n"
-        + "                case_when_value = (String) null;\n"
+        + "                case_when_value = null;\n"
         + "              }\n"
-        + "              return case_when_value == null ? (String) null : org.apache.calcite"
+        + "              return case_when_value == null ? null : org.apache.calcite"
         + ".runtime.SqlFunctions.upper(case_when_value);";
     CalciteAssert.hr()
         .query(sql)
@@ -2656,13 +2655,13 @@ public class JdbcTest {
         + "              if ($L4J$C$org_apache_calcite_runtime_SqlFunctions_ne_) {\n"
         + "                case_when_value = $L4J$C$Integer_valueOf_1_;\n"
         + "              } else {\n"
-        + "                case_when_value = (Integer) null;\n"
+        + "                case_when_value = null;\n"
         + "              }\n"
         + "              final Integer binary_call_value0 = "
-        + "case_when_value == null ? (Integer) null : "
+        + "case_when_value == null ? null : "
         + "Integer.valueOf(current.deptno + case_when_value.intValue());\n"
         + "              return input_value == null || binary_call_value0 == null"
-        + " ? (String) null"
+        + " ? null"
         + " : org.apache.calcite.runtime.SqlFunctions.substring(input_value, "
         + "binary_call_value0.intValue());\n";
     CalciteAssert.hr()
@@ -2689,20 +2688,20 @@ public class JdbcTest {
         + "              if ($L4J$C$org_apache_calcite_runtime_SqlFunctions_eq_) {\n"
         + "                case_when_value = $L4J$C$Integer_valueOf_1_;\n"
         + "              } else {\n"
-        + "                case_when_value = (Integer) null;\n"
+        + "                case_when_value = null;\n"
         + "              }\n"
         + "              final Integer binary_call_value1 = "
         + "case_when_value == null"
-        + " ? (Integer) null"
+        + " ? null"
         + " : Integer.valueOf(input_value0 * 0 + case_when_value.intValue());\n"
         + "              final String method_call_value = "
         + "input_value == null || binary_call_value1 == null"
-        + " ? (String) null"
+        + " ? null"
         + " : org.apache.calcite.runtime.SqlFunctions.substring(input_value, "
         + "binary_call_value1.intValue());\n"
         + "              final String trim_value = "
         + "method_call_value == null"
-        + " ? (String) null"
+        + " ? null"
         + " : org.apache.calcite.runtime.SqlFunctions.trim(true, true, \" \", "
         + "method_call_value, true);\n"
         + "              Integer case_when_value0;\n"
@@ -2713,16 +2712,16 @@ public class JdbcTest {
         + "                if (current.deptno * 8 > 8) {\n"
         + "                  case_when_value1 = $L4J$C$Integer_valueOf_5_;\n"
         + "                } else {\n"
-        + "                  case_when_value1 = (Integer) null;\n"
+        + "                  case_when_value1 = null;\n"
         + "                }\n"
         + "                case_when_value0 = case_when_value1;\n"
         + "              }\n"
         + "              final Integer binary_call_value3 = "
         + "case_when_value0 == null"
-        + " ? (Integer) null"
+        + " ? null"
         + " : Integer.valueOf(case_when_value0.intValue() - 2);\n"
         + "              return trim_value == null || binary_call_value3 == null"
-        + " ? (String) null"
+        + " ? null"
         + " : org.apache.calcite.runtime.SqlFunctions.substring(trim_value, "
         + "binary_call_value3.intValue());\n";
     CalciteAssert.hr()
@@ -2753,20 +2752,20 @@ public class JdbcTest {
         + "              if ($L4J$C$org_apache_calcite_runtime_SqlFunctions_eq_) {\n"
         + "                case_when_value = $L4J$C$Integer_valueOf_1_;\n"
         + "              } else {\n"
-        + "                case_when_value = (Integer) null;\n"
+        + "                case_when_value = null;\n"
         + "              }\n"
         + "              final Integer binary_call_value1 = "
         + "case_when_value == null"
-        + " ? (Integer) null"
+        + " ? null"
         + " : Integer.valueOf(input_value0 * 0 + case_when_value.intValue());\n"
         + "              final String method_call_value = "
         + "input_value == null || binary_call_value1 == null"
-        + " ? (String) null"
+        + " ? null"
         + " : org.apache.calcite.runtime.SqlFunctions.substring(input_value, "
         + "binary_call_value1.intValue());\n"
         + "              final String trim_value = "
         + "method_call_value == null"
-        + " ? (String) null"
+        + " ? null"
         + " : org.apache.calcite.runtime.SqlFunctions.trim(true, true, \" \", "
         + "method_call_value, true);\n"
         + "              Integer case_when_value0;\n"
@@ -2777,16 +2776,16 @@ public class JdbcTest {
         + "                if (current.deptno * 8 > 8) {\n"
         + "                  case_when_value1 = $L4J$C$Integer_valueOf_5_;\n"
         + "                } else {\n"
-        + "                  case_when_value1 = (Integer) null;\n"
+        + "                  case_when_value1 = null;\n"
         + "                }\n"
         + "                case_when_value0 = case_when_value1;\n"
         + "              }\n"
         + "              final Integer binary_call_value3 = "
         + "case_when_value0 == null"
-        + " ? (Integer) null"
+        + " ? null"
         + " : Integer.valueOf(case_when_value0.intValue() - 2);\n"
         + "              return trim_value == null || binary_call_value3 == null"
-        + " ? (String) null"
+        + " ? null"
         + " : org.apache.calcite.runtime.SqlFunctions.substring(trim_value, "
         + "binary_call_value3.intValue());";
     CalciteAssert.hr()
@@ -2836,7 +2835,7 @@ public class JdbcTest {
    * into a VARCHAR column the behavior would be different; the literals
    * would be converted into VARCHAR(3) values and the implied cast from
    * CHAR(1) to CHAR(3) that appends trailing spaces does not occur. See
-   * "contextually typed value specification" in the SQL spec.</p>
+   * "contextually typed value specification" in the SQL spec.
    */
   @Test void testValuesComposite() {
     CalciteAssert.that()
@@ -3365,7 +3364,7 @@ public class JdbcTest {
       } catch (SQLException e) {
         throw TestUtil.rethrow(e);
       }
-      assertThat(msg, numbers.size(), is(3));
+      assertThat(msg, numbers, hasSize(3));
       assertThat(msg, numbers.get(nullCollation.last(desc) ? 2 : 0),
           nullValue());
     };
@@ -3936,7 +3935,7 @@ public class JdbcTest {
             + "              if (org.apache.calcite.runtime.SqlFunctions.toLong(current[4]) > 0L) {\n"
             + "                case_when_value = Float.valueOf(org.apache.calcite.runtime.SqlFunctions.toFloat(current[5]));\n"
             + "              } else {\n"
-            + "                case_when_value = (Float) null;\n"
+            + "                case_when_value = null;\n"
             + "              }")
         .planContains("return new Object[] {\n"
             + "                  current[1],\n"
@@ -4635,7 +4634,7 @@ public class JdbcTest {
    * <a href="https://issues.apache.org/jira/browse/CALCITE-285">[CALCITE-285]
    * Window functions throw exception without ORDER BY</a>.
    *
-   * <p>Note:</p>
+   * <p>Note:
    *
    * <ul>
    * <li>With no ORDER BY, the window is over all rows in the partition.
@@ -6246,7 +6245,7 @@ public class JdbcTest {
                 + "where \"deptno\" = 10";
             connection.createStatement()
                 .executeQuery(sql);
-            assertThat(objects.size(), is(1));
+            assertThat(objects, hasSize(1));
           } catch (SQLException e) {
             throw TestUtil.rethrow(e);
           }
@@ -7138,7 +7137,7 @@ public class JdbcTest {
     aSchema.setCacheEnabled(true);
 
     // explicit should win implicit.
-    assertThat(aSchema.getSubSchemaNames().size(), is(1));
+    assertThat(aSchema.getSubSchemaNames(), hasSize(1));
   }
 
   @Test void testSimpleCalciteSchema() throws Exception {
@@ -7165,7 +7164,7 @@ public class JdbcTest {
     // add implicit schema "/a/b"
     aSubSchemaMap.put("b", new AbstractSchema());
     // explicit should win implicit.
-    assertThat(aSchema.getSubSchemaNames().size(), is(2));
+    assertThat(aSchema.getSubSchemaNames(), hasSize(2));
   }
 
   @Test void testCaseSensitiveConfigurableSimpleCalciteSchema() throws Exception {
@@ -7262,31 +7261,31 @@ public class JdbcTest {
       }
     });
     aSchema.setCacheEnabled(true);
-    assertThat(aSchema.getSubSchemaNames().size(), is(0));
+    assertThat(aSchema.getSubSchemaNames(), hasSize(0));
 
     // first call, to populate the cache
-    assertThat(aSchema.getSubSchemaNames().size(), is(0));
+    assertThat(aSchema.getSubSchemaNames(), hasSize(0));
 
     // create schema "/a/b1". Appears only when we disable caching.
     aSubSchemaMap.put("b1", new AbstractSchema());
-    assertThat(aSchema.getSubSchemaNames().size(), is(0));
+    assertThat(aSchema.getSubSchemaNames(), hasSize(0));
     assertThat(aSchema.getSubSchema("b1"), nullValue());
     aSchema.setCacheEnabled(false);
-    assertThat(aSchema.getSubSchemaNames().size(), is(1));
+    assertThat(aSchema.getSubSchemaNames(), hasSize(1));
     assertThat(aSchema.getSubSchema("b1"), notNullValue());
 
     // create schema "/a/b2". Appears immediately, because caching is disabled.
     aSubSchemaMap.put("b2", new AbstractSchema());
-    assertThat(aSchema.getSubSchemaNames().size(), is(2));
+    assertThat(aSchema.getSubSchemaNames(), hasSize(2));
 
     // an explicit sub-schema appears immediately, even if caching is enabled
     aSchema.setCacheEnabled(true);
-    assertThat(aSchema.getSubSchemaNames().size(), is(2));
+    assertThat(aSchema.getSubSchemaNames(), hasSize(2));
     aSchema.add("b3", new AbstractSchema()); // explicit
     aSubSchemaMap.put("b4", new AbstractSchema()); // implicit
-    assertThat(aSchema.getSubSchemaNames().size(), is(3));
+    assertThat(aSchema.getSubSchemaNames(), hasSize(3));
     aSchema.setCacheEnabled(false);
-    assertThat(aSchema.getSubSchemaNames().size(), is(4));
+    assertThat(aSchema.getSubSchemaNames(), hasSize(4));
     for (String name : aSchema.getSubSchemaNames()) {
       assertThat(aSchema.getSubSchema(name), notNullValue());
     }
@@ -7299,19 +7298,19 @@ public class JdbcTest {
       }
     });
     a2Schema.setCacheEnabled(true);
-    assertThat(a2Schema.getSubSchemaNames().size(), is(0));
+    assertThat(a2Schema.getSubSchemaNames(), hasSize(0));
 
     // create schema "/a2/b3". Change not visible since caching is enabled.
     a2SubSchemaMap.put("b3", new AbstractSchema());
-    assertThat(a2Schema.getSubSchemaNames().size(), is(0));
+    assertThat(a2Schema.getSubSchemaNames(), hasSize(0));
     Thread.sleep(1);
-    assertThat(a2Schema.getSubSchemaNames().size(), is(0));
+    assertThat(a2Schema.getSubSchemaNames(), hasSize(0));
 
     // Change visible after we turn off caching.
     a2Schema.setCacheEnabled(false);
-    assertThat(a2Schema.getSubSchemaNames().size(), is(1));
+    assertThat(a2Schema.getSubSchemaNames(), hasSize(1));
     a2SubSchemaMap.put("b4", new AbstractSchema());
-    assertThat(a2Schema.getSubSchemaNames().size(), is(2));
+    assertThat(a2Schema.getSubSchemaNames(), hasSize(2));
     for (String name : aSchema.getSubSchemaNames()) {
       assertThat(aSchema.getSubSchema(name), notNullValue());
     }
@@ -7323,7 +7322,7 @@ public class JdbcTest {
     a2Schema.add("TABLE1", table);
     a2Schema.add("tabLe1", table);
     a2Schema.add("tabLe2", table);
-    assertThat(a2Schema.getTableNames().size(), is(4));
+    assertThat(a2Schema.getTableNames(), hasSize(4));
     final CalciteSchema a2CalciteSchema = CalciteSchema.from(a2Schema);
     assertThat(a2CalciteSchema.getTable("table1", true), notNullValue());
     assertThat(a2CalciteSchema.getTable("table1", false), notNullValue());
@@ -8232,7 +8231,7 @@ public class JdbcTest {
         if (employees == null) {
           employees = Collections.emptyList();
         }
-        return JdbcFrontLinqBackTest.mutable(name, employees);
+        return JdbcFrontLinqBackTest.mutable(name, employees, false);
       case "DEPARTMENTS":
         clazz = Department.class;
         array = new HrSchema().depts;

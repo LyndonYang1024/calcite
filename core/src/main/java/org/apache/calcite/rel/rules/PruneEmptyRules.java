@@ -132,7 +132,7 @@ public abstract class PruneEmptyRules {
       return ((Values) node).getTuples().isEmpty();
     }
     if (node instanceof HepRelVertex) {
-      return isEmpty(((HepRelVertex) node).getCurrentRel());
+      return isEmpty(node.stripped());
     }
     // Note: relation input might be a RelSubset, so we just iterate over the relations
     // in order to check if the subset is equivalent to an empty relation.
@@ -152,8 +152,9 @@ public abstract class PruneEmptyRules {
    * Rule that converts a {@link org.apache.calcite.rel.core.TableScan}
    * to empty if the table has no rows in it.
    *
-   * The rule exploits the {@link org.apache.calcite.rel.metadata.RelMdMaxRowCount} to derive if
-   * the table is empty or not.
+   * <p>The rule exploits the
+   * {@link org.apache.calcite.rel.metadata.RelMdMaxRowCount} to derive if the
+   * table is empty or not.
    */
   public static final RelOptRule EMPTY_TABLE_INSTANCE =
       ImmutableZeroMaxRowsRuleConfig.DEFAULT.toRule();
@@ -262,6 +263,7 @@ public abstract class PruneEmptyRules {
 
   /**
    * Rule that converts a {@link Correlate} to empty if its right child is empty.
+   *
    * <p>Examples:
    * <ul>
    * <li>Correlate(Scan(Emp), Empty, INNER) becomes Empty</li>
@@ -282,16 +284,19 @@ public abstract class PruneEmptyRules {
 
   /**
    * Rule that converts a relation into empty.
-   * <p>
-   * The users can control the application of the rule by:</p>
+   *
+   * <p>The users can control the application of the rule by:
+   *
    * <ul>
-   *   <li>calling the appropriate constructor and passing the necessary configuration;</li>
-   *   <li>extending the class through inheritance and overriding
-   *   {@link RemoveEmptySingleRule#matches(RelOptRuleCall)}).</li>
+   * <li>calling the appropriate constructor and passing the necessary
+   * configuration;
+   *
+   * <li>extending the class through inheritance and overriding
+   * {@link RemoveEmptySingleRule#matches(RelOptRuleCall)}).
    * </ul>
    *
-   * <p>When using the deprecated constructors it is only possible to convert relations
-   * which strictly have a single input ({@link SingleRel}).</p>*/
+   * <p>When using the deprecated constructors it is only possible to convert
+   * relations which strictly have a single input ({@link SingleRel}). */
   public static class RemoveEmptySingleRule extends PruneEmptyRule {
     /** Creates a RemoveEmptySingleRule. */
     RemoveEmptySingleRule(PruneEmptyRule.Config config) {
@@ -624,10 +629,12 @@ public abstract class PruneEmptyRules {
     }
   }
 
-  /** Configuration for rule that transforms an empty relational expression into an empty values.
+  /** Configuration for rule that transforms an empty relational expression into
+   * an empty values.
    *
-   * It relies on {@link org.apache.calcite.rel.metadata.RelMdMaxRowCount} to derive if the relation
-   * is empty or not. If the stats are not available then the rule is a noop. */
+   * <p>It relies on {@link org.apache.calcite.rel.metadata.RelMdMaxRowCount} to
+   * derive if the relation is empty or not. If the stats are not available then
+   * the rule is a noop. */
   @Value.Immutable
   public interface ZeroMaxRowsRuleConfig extends PruneEmptyRule.Config {
     ZeroMaxRowsRuleConfig DEFAULT = ImmutableZeroMaxRowsRuleConfig.of()

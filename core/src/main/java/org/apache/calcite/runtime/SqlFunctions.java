@@ -768,6 +768,20 @@ public class SqlFunctions {
     return s0 + s1;
   }
 
+  /** Concatenates two strings.
+   * Returns null only when both s0 and s1 are null,
+   * otherwise null is treated as empty string. */
+  public static @Nullable String concatWithNull(@Nullable String s0,
+      @Nullable String s1) {
+    if (s0 == null) {
+      return s1;
+    } else if (s1 == null) {
+      return s0;
+    } else {
+      return s0 + s1;
+    }
+  }
+
   /** SQL {@code binary || binary} operator. */
   public static ByteString concat(ByteString s0, ByteString s1) {
     return s0.concat(s1);
@@ -1039,7 +1053,7 @@ public class SqlFunctions {
   }
 
   /** SQL <code>&lt;gt;</code> operator applied to Object values (at least one
-   *  operand has ANY type, including String; neither may be null). */
+   * operand has ANY type, including String; neither may be null). */
   public static boolean neAny(Object b0, Object b1) {
     return !eqAny(b0, b1);
   }
@@ -1854,6 +1868,20 @@ public class SqlFunctions {
     return Math.acos(b0);
   }
 
+  // ACOSH
+  /** SQL <code>ACOSH</code> operator applied to BigDecimal values. */
+  public static double acosh(BigDecimal b0) {
+    return acosh(b0.doubleValue());
+  }
+
+  /** SQL <code>ACOSH</code> operator applied to double values. */
+  public static double acosh(double b0) {
+    if (b0 < 1) {
+      throw new IllegalArgumentException("Input parameter of acosh cannot be less than 1!");
+    }
+    return Math.log(Math.sqrt(b0 * b0 - 1.0d) + b0);
+  }
+
   // ASIN
   /** SQL <code>ASIN</code> operator applied to BigDecimal values. */
   public static double asin(BigDecimal b0) {
@@ -1863,6 +1891,25 @@ public class SqlFunctions {
   /** SQL <code>ASIN</code> operator applied to double values. */
   public static double asin(double b0) {
     return Math.asin(b0);
+  }
+
+  // ASINH
+  /** SQL <code>ASINH</code> operator applied to BigDecimal values. */
+  public static double asinh(BigDecimal b0) {
+    return asinh(b0.doubleValue());
+  }
+
+  /** SQL <code>ASINH</code> operator applied to double values. */
+  public static double asinh(double b0) {
+    final double sign;
+    // check the sign bit of the raw representation to handle -0.
+    if (Double.doubleToRawLongBits(b0) < 0) {
+      b0 = Math.abs(b0);
+      sign = -1.0d;
+    } else {
+      sign = 1.0d;
+    }
+    return sign * Math.log(Math.sqrt(b0 * b0 + 1.0d) + b0);
   }
 
   // ATAN
@@ -1895,6 +1942,29 @@ public class SqlFunctions {
   /** SQL <code>ATAN2</code> operator applied to double values. */
   public static double atan2(double b0, double b1) {
     return Math.atan2(b0, b1);
+  }
+
+  // ATANH
+  /** SQL <code>ATANH</code> operator applied to BigDecimal values. */
+  public static double atanh(BigDecimal b) {
+    return atanh(b.doubleValue());
+  }
+
+  /** SQL <code>ATANH</code> operator applied to double values. */
+  public static double atanh(double b) {
+    if (Math.abs(b) >= 1) {
+      throw new IllegalArgumentException("Input parameter of atanh cannot be out of the "
+          + "range (-1, 1)!");
+    }
+    final double mult;
+    // check the sign bit of the raw representation to handle -0.
+    if (Double.doubleToRawLongBits(b) < 0) {
+      b = Math.abs(b);
+      mult = -0.5d;
+    } else {
+      mult = 0.5d;
+    }
+    return mult * Math.log((1.0d + b) / (1.0d - b));
   }
 
   // CBRT
@@ -3813,10 +3883,52 @@ public class SqlFunctions {
     return atomic;
   }
 
-  /** Support the ARRAY_DISTINCT function. */
+  /** Support the ARRAY_COMPACT function. */
+  public static List compact(List list) {
+    final List result = new ArrayList();
+    for (Object element : list) {
+      if (element != null) {
+        result.add(element);
+      }
+    }
+    return result;
+  }
+
+  /** Support the ARRAY_DISTINCT function.
+   *
+   * <p>Note: If the list does not contain null,
+   * {@link Util#distinctList(List)} is probably faster. */
   public static List distinct(List list) {
     Set result = new LinkedHashSet<>(list);
     return new ArrayList<>(result);
+  }
+
+  /** Support the ARRAY_MAX function. */
+  public static @Nullable <T extends Object & Comparable<? super T>> T arrayMax(
+      List<? extends T> list) {
+
+    T max = null;
+    for (int i = 0; i < list.size(); i++) {
+      T item = list.get(i);
+      if (item != null && (max == null || item.compareTo(max) > 0)) {
+        max = item;
+      }
+    }
+    return max;
+  }
+
+  /** Support the ARRAY_MIN function. */
+  public static @Nullable <T extends Object & Comparable<? super T>> T arrayMin(
+      List<? extends T> list) {
+
+    T min = null;
+    for (int i = 0; i < list.size(); i++) {
+      T item = list.get(i);
+      if (item != null && (min == null || item.compareTo(min) < 0)) {
+        min = item;
+      }
+    }
+    return min;
   }
 
   /** Support the ARRAY_REPEAT function. */
@@ -3829,6 +3941,46 @@ public class SqlFunctions {
       numberOfElement = 0;
     }
     return Collections.nCopies(numberOfElement, element);
+  }
+
+  /** Support the ARRAY_EXCEPT function. */
+  public static List arrayExcept(List list1, List list2) {
+    final Set result = new LinkedHashSet<>(list1);
+    result.removeAll(list2);
+    return new ArrayList<>(result);
+  }
+
+  /** Support the ARRAY_INTERSECT function. */
+  public static List arrayIntersect(List list1, List list2) {
+    final Set result = new LinkedHashSet<>(list1);
+    result.retainAll(list2);
+    return new ArrayList<>(result);
+  }
+
+  /** Support the ARRAY_UNION function. */
+  public static List arrayUnion(List list1, List list2) {
+    final Set result = new LinkedHashSet<>();
+    result.addAll(list1);
+    result.addAll(list2);
+    return new ArrayList<>(result);
+  }
+
+  /** Support the SORT_ARRAY function. */
+  public static List sortArray(List list, boolean ascending) {
+    Comparator comparator = ascending
+        ? Comparator.nullsFirst(Comparator.naturalOrder())
+        : Comparator.nullsLast(Comparator.reverseOrder());
+    list.sort(comparator);
+    return list;
+  }
+
+  /** Support the MAP_ENTRIES function. */
+  public static List mapEntries(Map<Object, Object> map) {
+    final List result = new ArrayList(map.size());
+    for (Map.Entry<Object, Object> entry : map.entrySet()) {
+      result.add(Arrays.asList(entry.getKey(), entry.getValue()));
+    }
+    return result;
   }
 
   /** Support the MAP_KEYS function. */
@@ -3965,6 +4117,42 @@ public class SqlFunctions {
   public static List reverse(List list) {
     Collections.reverse(list);
     return list;
+  }
+
+  /** SQL {@code ARRAY_TO_STRING(array, delimiter)} function. */
+  public static String arrayToString(List list, String delimiter) {
+    return arrayToString(list, delimiter, null);
+  }
+
+  /** SQL {@code ARRAY_TO_STRING(array, delimiter, nullText)} function. */
+  public static String arrayToString(List list, String delimiter, @Nullable String nullText) {
+    StringBuilder sb = new StringBuilder();
+    boolean isFirst = true;
+    for (Object item : list) {
+      String str;
+      if (item == null) {
+        if (nullText == null) {
+          continue;
+        } else {
+          str = nullText;
+        }
+      } else if (item instanceof String) {
+        str = (String) item;
+      } else if (item instanceof ByteString) {
+        str = item.toString();
+      } else {
+        throw new IllegalStateException(
+            "arrayToString supports only String or ByteString, but got "
+                + item.getClass().getName());
+      }
+
+      if (!isFirst) {
+        sb.append(delimiter);
+      }
+      sb.append(str);
+      isFirst = false;
+    }
+    return sb.toString();
   }
 
   /**

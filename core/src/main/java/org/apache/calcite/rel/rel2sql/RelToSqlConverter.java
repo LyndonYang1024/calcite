@@ -311,7 +311,7 @@ public class RelToSqlConverter extends SqlImplementor
    *
    * <p>For example, the following queries are equivalent:
    *
-   * <pre>{@code
+   * <blockquote><pre>{@code
    * // Comma join
    * SELECT *
    * FROM Emp, Dept
@@ -323,7 +323,7 @@ public class RelToSqlConverter extends SqlImplementor
    * // Inner join
    * SELECT *
    * FROM Emp INNER JOIN Dept ON TRUE
-   * }</pre>
+   * }</pre></blockquote>
    *
    * <p>Examples:
    * <ul>
@@ -460,7 +460,17 @@ public class RelToSqlConverter extends SqlImplementor
         addSelect(selectList, sqlExpr, e.getRowType());
       }
 
-      builder.setSelect(new SqlNodeList(selectList, POS));
+      final SqlNodeList selectNodeList = new SqlNodeList(selectList, POS);
+      if (builder.select.getGroup() == null
+          && builder.select.getHaving() == null
+          && SqlUtil.containsAgg(builder.select.getSelectList())
+          && !SqlUtil.containsAgg(selectNodeList)) {
+        // We are just about to remove the last aggregate function from the
+        // SELECT clause. The "GROUP BY ()" was implicit, but we now need to
+        // make it explicit.
+        builder.setGroupBy(SqlNodeList.EMPTY);
+      }
+      builder.setSelect(selectNodeList);
     }
     return builder.result();
   }
@@ -568,7 +578,8 @@ public class RelToSqlConverter extends SqlImplementor
     builder.setSelect(new SqlNodeList(selectList, POS));
     if (!groupByList.isEmpty() || e.getAggCallList().isEmpty()) {
       // Some databases don't support "GROUP BY ()". We can omit it as long
-      // as there is at least one aggregate function.
+      // as there is at least one aggregate function. (We have to take care
+      // if we later prune away that last aggregate function.)
       builder.setGroupBy(new SqlNodeList(groupByList, POS));
     }
 
@@ -580,7 +591,7 @@ public class RelToSqlConverter extends SqlImplementor
       // it out using a "HAVING GROUPING(groupSets) <> 0".
       // We want to generate the
       final SqlNodeList groupingList = new SqlNodeList(POS);
-      e.getGroupSet().forEach(g ->
+      e.getGroupSet().forEachInt(g ->
           groupingList.add(builder.context.field(g)));
       builder.setHaving(
           SqlStdOperatorTable.NOT_EQUALS.createCall(POS,

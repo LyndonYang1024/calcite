@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 package org.apache.calcite.sql.parser;
-
 import org.apache.calcite.avatica.util.Quoting;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlDialect;
@@ -80,6 +79,8 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.hasToString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
@@ -746,6 +747,52 @@ public class SqlParserTest {
         .fails("(?s)Encountered \"\\. \\*\" at .*");
     sql("select emp.empno AS x from ^*^")
         .fails("(?s)Encountered \"\\*\" at .*");
+  }
+
+  @Test void testPercentileCont() {
+    sql("select percentile_cont(.5) within group (order by 3) from t")
+        .ok("SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY 3)\n"
+            + "FROM `T`");
+  }
+
+  @Test void testPercentileDisc() {
+    sql("select percentile_disc(.5) within group (order by 3) from t")
+        .ok("SELECT PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY 3)\n"
+            + "FROM `T`");
+  }
+
+  /** Tests BigQuery's variant of PERCENTILE_CONT, which uses OVER rather than
+   * WITHIN GROUP, and allows RESPECT/IGNORE NULLS inside the parentheses. */
+  @Test void testPercentileContBigQuery() {
+    sql("select percentile_cont(x, .5) over() from unnest(array[1,2,3,4]) as x")
+        .withDialect(BIG_QUERY)
+        .ok("SELECT (PERCENTILE_CONT(x, 0.5) OVER ())\n"
+            + "FROM UNNEST((ARRAY[1, 2, 3, 4])) AS x");
+    sql("select percentile_cont(x, .5 RESPECT NULLS) over() from unnest(array[1,2,3,4]) as x")
+        .withDialect(BIG_QUERY)
+        .ok("SELECT (PERCENTILE_CONT(x, 0.5) RESPECT NULLS OVER ())\n"
+            + "FROM UNNEST((ARRAY[1, 2, 3, 4])) AS x");
+    sql("select percentile_cont(x, .5 IGNORE NULLS) over() from unnest(array[1,null,3,4]) as x")
+        .withDialect(BIG_QUERY)
+        .ok("SELECT (PERCENTILE_CONT(x, 0.5) IGNORE NULLS OVER ())\n"
+            + "FROM UNNEST((ARRAY[1, NULL, 3, 4])) AS x");
+  }
+
+  /** Tests BigQuery's variant of PERCENTILE_DISC, which uses OVER rather than
+   * WITHIN GROUP, and allows RESPECT/IGNORE NULLS inside the parentheses. */
+  @Test void testPercentileDiscBigQuery() {
+    sql("select percentile_disc(x, .5) over() from unnest(array[1,2,3,4]) as x")
+        .withDialect(BIG_QUERY)
+        .ok("SELECT (PERCENTILE_DISC(x, 0.5) OVER ())\n"
+            + "FROM UNNEST((ARRAY[1, 2, 3, 4])) AS x");
+    sql("select percentile_disc(x, .5 RESPECT NULLS) over() from unnest(array[1,2,3,4]) as x")
+        .withDialect(BIG_QUERY)
+        .ok("SELECT (PERCENTILE_DISC(x, 0.5) RESPECT NULLS OVER ())\n"
+            + "FROM UNNEST((ARRAY[1, 2, 3, 4])) AS x");
+    sql("select percentile_disc(x, .5 IGNORE NULLS) over() from unnest(array[1,null,3,4]) as x")
+        .withDialect(BIG_QUERY)
+        .ok("SELECT (PERCENTILE_DISC(x, 0.5) IGNORE NULLS OVER ())\n"
+            + "FROM UNNEST((ARRAY[1, NULL, 3, 4])) AS x");
   }
 
   @Test void testHyphenatedTableName() {
@@ -6477,7 +6524,7 @@ public class SqlParserTest {
       messages.add("Warning: use of non-standard feature '" + token + "'");
     }
     return throwables -> {
-      assertThat(throwables.size(), is(messages.size()));
+      assertThat(throwables, hasSize(messages.size()));
       for (Pair<? extends Throwable, String> pair : Pair.zip(throwables, messages)) {
         assertThat(pair.left.getMessage(), containsString(pair.right));
       }
@@ -8937,7 +8984,7 @@ public class SqlParserTest {
         + "from emp /* comment with 'quoted string'? */ as e\n"
         + "where deptno < ?3\n"
         + "and hiredate > ?4";
-    assertThat(hoisted.toString(), is(expected));
+    assertThat(hoisted, hasToString(expected));
 
     // As above, using the function explicitly.
     assertThat(hoisted.substitute(Hoist::ordinalString), is(expected));
@@ -9030,7 +9077,7 @@ public class SqlParserTest {
         @Nullable SqlDialect dialect, UnaryOperator<String> converter,
         List<String> expected) {
       final SqlNodeList sqlNodeList = parseStmtsAndHandleEx(factory, sap.sql);
-      assertThat(sqlNodeList.size(), is(expected.size()));
+      assertThat(sqlNodeList, hasSize(expected.size()));
 
       final SqlWriterConfig sqlWriterConfig =
           SQL_WRITER_CONFIG.withDialect(
@@ -9216,7 +9263,7 @@ public class SqlParserTest {
 
     static void checkList(SqlNodeList sqlNodeList,
         UnaryOperator<String> converter, List<String> expected) {
-      assertThat(sqlNodeList.size(), is(expected.size()));
+      assertThat(sqlNodeList, hasSize(expected.size()));
 
       for (int i = 0; i < sqlNodeList.size(); i++) {
         SqlNode sqlNode = sqlNodeList.get(i);

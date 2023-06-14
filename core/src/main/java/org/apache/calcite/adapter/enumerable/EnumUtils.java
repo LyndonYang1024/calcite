@@ -733,7 +733,7 @@ public class EnumUtils {
     return null;
   }
 
-  /** Transforms a JoinRelType to Linq4j JoinType. **/
+  /** Transforms a JoinRelType to Linq4j JoinType. */
   static JoinType toLinq4jJoinType(JoinRelType joinRelType) {
     switch (joinRelType) {
     case INNER:
@@ -755,7 +755,7 @@ public class EnumUtils {
         "Unable to convert " + joinRelType + " to Linq4j JoinType");
   }
 
-  /** Returns a predicate expression based on a join condition. **/
+  /** Returns a predicate expression based on a join condition. */
   static Expression generatePredicate(
       EnumerableRelImplementor implementor,
       RexBuilder rexBuilder,
@@ -794,7 +794,8 @@ public class EnumUtils {
    * Generates a window selector which appends attribute of the window based on
    * the parameters.
    *
-   * Note that it only works for batch scenario. E.g. all data is known and there is no late data.
+   * <p>Note that it only works for batch scenario. E.g. all data is known and
+   * there is no late data.
    */
   static Expression tumblingWindowSelector(
       PhysType inputPhysType,

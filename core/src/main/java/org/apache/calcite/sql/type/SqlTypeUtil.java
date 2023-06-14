@@ -54,6 +54,7 @@ import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.util.AbstractList;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -181,6 +182,7 @@ public abstract class SqlTypeUtil {
 
   /**
    * Derives type of the call via its binding.
+   *
    * @param binding binding to derive the type from
    * @return datatype of the call
    */
@@ -191,6 +193,7 @@ public abstract class SqlTypeUtil {
 
   /**
    * Derives type of the given call under given binding.
+   *
    * @param binding binding to derive the type from
    * @param node node type to derive
    * @return datatype of the given node
@@ -203,6 +206,7 @@ public abstract class SqlTypeUtil {
 
   /**
    * Derives types for the list of nodes.
+   *
    * @param binding binding to derive the type from
    * @param nodes the list of nodes to derive types from
    * @return the list of types of the given nodes
@@ -1192,6 +1196,15 @@ public abstract class SqlTypeUtil {
         type.getFieldCount(), type);
     return createMapType(typeFactory, type.getFieldList().get(0).getType(),
         type.getFieldList().get(1).getType(), false);
+  }
+
+  /** Creates a ROW type from a map type. The record type will have two fields. */
+  public static RelDataType createRecordTypeFromMap(
+      RelDataTypeFactory typeFactory, RelDataType type) {
+    RelDataType keyType = requireNonNull(type.getKeyType(), () -> "keyType of " + type);
+    RelDataType valueType = requireNonNull(type.getValueType(), () -> "keyType of " + type);
+    return typeFactory.createStructType(
+        Arrays.asList(keyType, valueType), Arrays.asList("f0", "f1"));
   }
 
   /**

@@ -60,9 +60,9 @@ import java.util.TreeSet;
 import static org.apache.calcite.linq4j.test.BlockBuilderBase.ONE;
 import static org.apache.calcite.linq4j.test.BlockBuilderBase.TWO;
 
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasToString;
-import static org.hamcrest.core.Is.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
@@ -1463,7 +1463,7 @@ public class ExpressionTest {
     assertEquals(
         "{\n"
             + "  final Short v = (Short) ((Object[]) p)[4];\n"
-            + "  return (Number) v == null ? (Boolean) null : ("
+            + "  return (Number) v == null ? null : ("
             + "(Number) v).intValue() == 1997;\n"
             + "}\n",
         Expressions.toString(builder.toBlock()));

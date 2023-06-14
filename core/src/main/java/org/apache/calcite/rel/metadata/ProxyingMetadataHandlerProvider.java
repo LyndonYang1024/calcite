@@ -36,7 +36,7 @@ import static java.util.Objects.requireNonNull;
 /**
  * A MetadataHandlerProvider built on a RelMetadataProvider.
  *
- * Uses proxies to call the underlying metadata provider.
+ * <p>Uses proxies to call the underlying metadata provider.
  */
 public class ProxyingMetadataHandlerProvider implements MetadataHandlerProvider {
 
@@ -44,6 +44,7 @@ public class ProxyingMetadataHandlerProvider implements MetadataHandlerProvider 
 
   /**
    * Create a proxying handler provider.
+   *
    * @param provider The provider this will operate against.
    */
   public ProxyingMetadataHandlerProvider(RelMetadataProvider provider) {

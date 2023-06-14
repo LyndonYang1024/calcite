@@ -134,8 +134,9 @@ import static org.apache.calcite.sql.test.SqlOperatorFixture.OUT_OF_RANGE_MESSAG
 import static org.apache.calcite.util.DateTimeStringUtils.getDateFormatter;
 
 import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
+import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -386,7 +387,7 @@ public class SqlOperatorTest {
 
       routines.removeIf(operator ->
           !sqlOperator.getClass().isInstance(operator));
-      assertThat(routines.size(), equalTo(1));
+      assertThat(routines, hasSize(1));
       assertThat(sqlOperator, equalTo(routines.get(0)));
     }
   }
@@ -1969,7 +1970,12 @@ public class SqlOperatorTest {
     f.checkString("concat('', '')", "", "VARCHAR(0) NOT NULL");
     f.checkString("concat('', 'a')", "a", "VARCHAR(1) NOT NULL");
     f.checkString("concat('a', 'b')", "ab", "VARCHAR(2) NOT NULL");
-    f.checkNull("concat('a', cast(null as varchar))");
+    // treat null value as empty string
+    f.checkString("concat('a', cast(null as varchar))", "a", "VARCHAR NOT NULL");
+    f.checkString("concat(null, 'b')", "b", "VARCHAR NOT NULL");
+    // return null when both arguments are null
+    f.checkNull("concat(null, cast(null as varchar))");
+    f.checkNull("concat(null, null)");
     f.checkFails("^concat('a', 'b', 'c')^", INVALID_ARGUMENTS_NUMBER, false);
     f.checkFails("^concat('a')^", INVALID_ARGUMENTS_NUMBER, false);
   }
@@ -5328,6 +5334,25 @@ public class SqlOperatorTest {
     f.checkScalar("rand_integer(2, 11)", 1, "INTEGER NOT NULL");
   }
 
+  /** Tests {@code ARRAY_COMPACT} function from Spark. */
+  @Test void testArrayCompactFunc() {
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.ARRAY_COMPACT);
+    f0.checkFails("^array_compact(array[null, 1, null, 2])^",
+        "No match found for function signature ARRAY_COMPACT\\(<INTEGER ARRAY>\\)", false);
+
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.SPARK);
+    f.checkScalar("array_compact(array[null, 1, null, 2])", "[1, 2]",
+        "INTEGER ARRAY NOT NULL");
+    f.checkScalar("array_compact(array[null])", "[]",
+        "NULL ARRAY NOT NULL");
+    f.checkScalar("array_compact(array(null))", "[]",
+        "NULL ARRAY NOT NULL");
+    f.checkScalar("array_compact(array())", "[]",
+        "UNKNOWN NOT NULL ARRAY NOT NULL");
+    f.checkNull("array_compact(null)");
+  }
+
   /** Tests {@code ARRAY_CONCAT} function from BigQuery. */
   @Test void testArrayConcat() {
     SqlOperatorFixture f = fixture()
@@ -5344,16 +5369,81 @@ public class SqlOperatorTest {
     f.checkNull("array_concat(cast(null as integer array), array[1])");
   }
 
+  /** Tests {@code ARRAY_CONTAINS} function from Spark. */
+  @Test void testArrayContainsFunc() {
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.ARRAY_CONTAINS);
+    f0.checkFails("^array_contains(array[1, 2], 1)^",
+        "No match found for function signature "
+            + "ARRAY_CONTAINS\\(<INTEGER ARRAY>, <NUMERIC>\\)", false);
+
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.SPARK);
+    f.checkScalar("array_contains(array[1, 2], 1)", true,
+        "BOOLEAN NOT NULL");
+    f.checkScalar("array_contains(array[1], 1)", true,
+        "BOOLEAN NOT NULL");
+    f.checkScalar("array_contains(array(), 1)", false,
+        "BOOLEAN NOT NULL");
+    f.checkScalar("array_contains(array[array[1, 2], array[3, 4]], array[1, 2])", true,
+        "BOOLEAN NOT NULL");
+    f.checkScalar("array_contains(array[map[1, 'a'], map[2, 'b']], map[1, 'a'])", true,
+        "BOOLEAN NOT NULL");
+    f.checkNull("array_contains(cast(null as integer array), 1)");
+    f.checkType("array_contains(cast(null as integer array), 1)", "BOOLEAN");
+    // Flink and Spark differ on the following. The expression
+    //   array_contains(array[1, null], cast(null as integer))
+    // returns TRUE in Flink, and returns UNKNOWN in Spark. The current
+    // function has Spark behavior, but if we supported a Flink function
+    // library (i.e. "fun=flink") we could add a function with Flink behavior.
+    f.checkNull("array_contains(array[1, null], cast(null as integer))");
+    f.checkType("array_contains(array[1, null], cast(null as integer))", "BOOLEAN");
+    f.checkFails("^array_contains(array[1, 2], true)^",
+        "INTEGER is not comparable to BOOLEAN", false);
+  }
+
   /** Tests {@code ARRAY_DISTINCT} function from Spark. */
   @Test void testArrayDistinctFunc() {
-    SqlOperatorFixture f = fixture()
-        .setFor(SqlLibraryOperators.ARRAY_DISTINCT)
-        .withLibrary(SqlLibrary.SPARK);
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.ARRAY_DISTINCT);
+    f0.checkFails("^array_distinct(array['foo'])^",
+        "No match found for function signature ARRAY_DISTINCT\\(<CHAR\\(3\\) ARRAY>\\)", false);
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.SPARK);
     f.checkScalar("array_distinct(array[1, 2, 2, 1])", "[1, 2]",
         "INTEGER NOT NULL ARRAY NOT NULL");
     f.checkScalar("array_distinct(array[null, 1, null])", "[null, 1]",
         "INTEGER ARRAY NOT NULL");
     f.checkNull("array_distinct(null)");
+  }
+
+  /** Tests {@code ARRAY_MAX} function from Spark. */
+  @Test void testArrayMaxFunc() {
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.ARRAY_MAX);
+    f0.checkFails("^array_max(array[1, 2])^",
+        "No match found for function signature ARRAY_MAX\\(<INTEGER ARRAY>\\)", false);
+
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.SPARK);
+    f.checkScalar("array_max(array[1, 2])", "2", "INTEGER");
+    f.checkScalar("array_max(array[1, 2, null])", "2", "INTEGER");
+    f.checkScalar("array_max(array[1])", "1", "INTEGER");
+    f.checkType("array_max(array())", "UNKNOWN");
+    f.checkNull("array_max(array())");
+    f.checkNull("array_max(cast(null as integer array))");
+  }
+
+  /** Tests {@code ARRAY_MIN} function from Spark. */
+  @Test void testArrayMinFunc() {
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.ARRAY_MIN);
+    f0.checkFails("^array_min(array[1, 2])^",
+        "No match found for function signature ARRAY_MIN\\(<INTEGER ARRAY>\\)", false);
+
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.SPARK);
+    f.checkScalar("array_min(array[1, 2])", "1", "INTEGER");
+    f.checkScalar("array_min(array[1, 2, null])", "1", "INTEGER");
+    f.checkType("array_min(array())", "UNKNOWN");
+    f.checkNull("array_min(array())");
+    f.checkNull("array_min(cast(null as integer array))");
   }
 
   /** Tests {@code ARRAY_REPEAT} function from Spark. */
@@ -5379,9 +5469,11 @@ public class SqlOperatorTest {
 
   /** Tests {@code ARRAY_REVERSE} function from BigQuery. */
   @Test void testArrayReverseFunc() {
-    SqlOperatorFixture f = fixture()
-        .setFor(SqlLibraryOperators.ARRAY_REVERSE)
-        .withLibrary(SqlLibrary.BIG_QUERY);
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.ARRAY_REVERSE);
+    f0.checkFails("^array_reverse(array[1])^",
+        "No match found for function signature ARRAY_REVERSE\\(<INTEGER ARRAY>\\)", false);
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.BIG_QUERY);
     f.checkScalar("array_reverse(array[1])", "[1]",
         "INTEGER NOT NULL ARRAY NOT NULL");
     f.checkScalar("array_reverse(array[1, 2])", "[2, 1]",
@@ -5407,14 +5499,146 @@ public class SqlOperatorTest {
 
   /** Tests {@code ARRAY_LENGTH} function from BigQuery. */
   @Test void testArrayLengthFunc() {
-    SqlOperatorFixture f = fixture()
-        .setFor(SqlLibraryOperators.ARRAY_LENGTH)
-        .withLibrary(SqlLibrary.BIG_QUERY);
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.ARRAY_LENGTH);
+    f0.checkFails("^array_length(array[1])^",
+        "No match found for function signature ARRAY_LENGTH\\(<INTEGER ARRAY>\\)", false);
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.BIG_QUERY);
     f.checkScalar("array_length(array[1])", "1",
         "INTEGER NOT NULL");
     f.checkScalar("array_length(array[1, 2, null])", "3",
         "INTEGER NOT NULL");
     f.checkNull("array_length(null)");
+  }
+
+  @Test void testArrayToStringFunc() {
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.ARRAY_TO_STRING);
+    f0.checkFails("^array_to_string(array['aa', 'b', 'c'], '-')^", "No match found for function"
+        + " signature ARRAY_TO_STRING\\(<CHAR\\(2\\) ARRAY>, <CHARACTER>\\)", false);
+
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.BIG_QUERY);
+    f.checkScalar("array_to_string(array['aa', 'b', 'c'], '-')", "aa-b-c",
+        "VARCHAR NOT NULL");
+    f.checkScalar("array_to_string(array[null, 'aa', null, 'b', null], '-', 'empty')",
+        "empty-aa-empty-b-empty", "VARCHAR NOT NULL");
+    f.checkScalar("array_to_string(array[null, 'aa', null, 'b', null], '-')", "aa-b",
+        "VARCHAR NOT NULL");
+    f.checkScalar("array_to_string(array[null, x'aa', null, x'bb', null], '-')", "aa-bb",
+        "VARCHAR NOT NULL");
+    f.checkScalar("array_to_string(array['', 'b'], '-')", "-b", "VARCHAR NOT NULL");
+    f.checkScalar("array_to_string(array['', ''], '-')", "-", "VARCHAR NOT NULL");
+    f.checkNull("array_to_string(null, '-')");
+    f.checkNull("array_to_string(array['a', 'b', null], null)");
+    f.checkFails("^array_to_string(array[1, 2, 3], '-', ' ')^",
+        "Cannot apply 'ARRAY_TO_STRING' to arguments of type 'ARRAY_TO_STRING"
+            + "\\(<INTEGER ARRAY>, <CHAR\\(1\\)>, <CHAR\\(1\\)>\\)'\\. Supported form\\(s\\):"
+            + " ARRAY_TO_STRING\\(<STRING ARRAY>, <CHARACTER>\\[, <CHARACTER>\\]\\)", false);
+  }
+
+  /** Tests {@code ARRAY_EXCEPT} function from Spark. */
+  @Test void testArrayExceptFunc() {
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.ARRAY_EXCEPT);
+    f0.checkFails("^array_except(array[2, null, 3, 3], array[1, 2, null])^",
+        "No match found for function signature "
+            + "ARRAY_EXCEPT\\(<INTEGER ARRAY>, <INTEGER ARRAY>\\)", false);
+
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.SPARK);
+    f.checkScalar("array_except(array[2, 3, 3], array[2])",
+        "[3]", "INTEGER NOT NULL ARRAY NOT NULL");
+    f.checkScalar("array_except(array[2], array[2, 3])",
+        "[]", "INTEGER NOT NULL ARRAY NOT NULL");
+    f.checkScalar("array_except(array[2, null, 3, 3], array[1, 2, null])",
+        "[3]", "INTEGER ARRAY NOT NULL");
+    f.checkNull("array_except(cast(null as integer array), array[1])");
+    f.checkNull("array_except(array[1], cast(null as integer array))");
+    f.checkNull("array_except(cast(null as integer array), cast(null as integer array))");
+  }
+
+  /** Tests {@code ARRAY_INTERSECT} function from Spark. */
+  @Test void testArrayIntersectFunc() {
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.ARRAY_INTERSECT);
+    f0.checkFails("^array_intersect(array[2, null, 2], array[1, 2, null])^",
+        "No match found for function signature "
+            + "ARRAY_INTERSECT\\(<INTEGER ARRAY>, <INTEGER ARRAY>\\)", false);
+
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.SPARK);
+    f.checkScalar("array_intersect(array[2, 3, 3], array[3])",
+        "[3]", "INTEGER NOT NULL ARRAY NOT NULL");
+    f.checkScalar("array_intersect(array[1], array[2, 3])",
+        "[]", "INTEGER NOT NULL ARRAY NOT NULL");
+    f.checkScalar("array_intersect(array[2, null, 2], array[1, 2, null])",
+        "[2, null]", "INTEGER ARRAY NOT NULL");
+    f.checkNull("array_intersect(cast(null as integer array), array[1])");
+    f.checkNull("array_intersect(array[1], cast(null as integer array))");
+    f.checkNull("array_intersect(cast(null as integer array), cast(null as integer array))");
+  }
+
+  /** Tests {@code ARRAY_UNION} function from Spark. */
+  @Test void testArrayUnionFunc() {
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.ARRAY_UNION);
+    f0.checkFails("^array_union(array[2, null, 2], array[1, 2, null])^",
+        "No match found for function signature "
+            + "ARRAY_UNION\\(<INTEGER ARRAY>, <INTEGER ARRAY>\\)", false);
+
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.SPARK);
+    f.checkScalar("array_intersect(array[2, 3, 3], array[3])",
+        "[3]", "INTEGER NOT NULL ARRAY NOT NULL");
+    f.checkScalar("array_union(array[2, null, 2], array[1, 2, null])",
+        "[2, null, 1]", "INTEGER ARRAY NOT NULL");
+    f.checkNull("array_union(cast(null as integer array), array[1])");
+    f.checkNull("array_union(array[1], cast(null as integer array))");
+    f.checkNull("array_union(cast(null as integer array), cast(null as integer array))");
+  }
+
+  /** Tests {@code SORT_ARRAY} function from Spark. */
+  @Test void testSortArrayFunc() {
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.SORT_ARRAY);
+    f0.checkFails("^sort_array(array[null, 1, null, 2])^",
+        "No match found for function signature SORT_ARRAY\\(<INTEGER ARRAY>\\)", false);
+    f0.checkFails("^sort_array(array[null, 1, null, 2], true)^",
+        "No match found for function signature SORT_ARRAY\\(<INTEGER ARRAY>, <BOOLEAN>\\)", false);
+
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.SPARK);
+    f.checkScalar("sort_array(array[2, null, 1])", "[null, 1, 2]",
+        "INTEGER ARRAY NOT NULL");
+    f.checkScalar("sort_array(array(2, null, 1), false)", "[2, 1, null]",
+        "INTEGER ARRAY NOT NULL");
+    f.checkScalar("sort_array(array[true, false, null])", "[null, false, true]",
+        "BOOLEAN ARRAY NOT NULL");
+    f.checkScalar("sort_array(array[true, false, null], false)", "[true, false, null]",
+        "BOOLEAN ARRAY NOT NULL");
+    f.checkScalar("sort_array(array[null])", "[null]",
+        "NULL ARRAY NOT NULL");
+    f.checkScalar("sort_array(array())", "[]",
+        "UNKNOWN NOT NULL ARRAY NOT NULL");
+    f.checkNull("sort_array(null)");
+
+    f.checkFails("^sort_array(array[2, null, 1], cast(1 as boolean))^",
+        "Argument to function 'SORT_ARRAY' must be a literal", false);
+    f.checkFails("^sort_array(array[2, null, 1], 1)^",
+        "Cannot apply 'SORT_ARRAY' to arguments of type "
+            + "'SORT_ARRAY\\(<INTEGER ARRAY>, <INTEGER>\\)'\\."
+            + " Supported form\\(s\\): 'SORT_ARRAY\\(<ARRAY>\\)'\n"
+            + "'SORT_ARRAY\\(<ARRAY>, <BOOLEAN>\\)'", false);
+  }
+
+  /** Tests {@code MAP_ENTRIES} function from Spark. */
+  @Test void testMapEntriesFunc() {
+    final SqlOperatorFixture f0 = fixture();
+    f0.setFor(SqlLibraryOperators.MAP_ENTRIES);
+    f0.checkFails("^map_entries(map['foo', 1, 'bar', 2])^",
+        "No match found for function signature MAP_ENTRIES\\(<\\(CHAR\\(3\\), INTEGER\\) "
+            + "MAP>\\)", false);
+    final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.SPARK);
+    f.checkScalar("map_entries(map['foo', 1, 'bar', 2])", "[{foo, 1}, {bar, 2}]",
+        "RecordType(CHAR(3) NOT NULL f0, INTEGER NOT NULL f1) NOT NULL ARRAY NOT NULL");
+    f.checkScalar("map_entries(map['foo', 1, null, 2])", "[{foo, 1}, {null, 2}]",
+        "RecordType(CHAR(3) f0, INTEGER NOT NULL f1) NOT NULL ARRAY NOT NULL");
   }
 
   /** Tests {@code MAP_KEYS} function from Spark. */
@@ -5585,6 +5809,75 @@ public class SqlOperatorTest {
         isWithin(2.3562d, 0.0001d));
     f.checkNull("atan2(cast(null as integer), -1)");
     f.checkNull("atan2(1, cast(null as double))");
+  }
+
+  @Test void testAcoshFunc() {
+    final SqlOperatorFixture f0 = fixture().setFor(SqlLibraryOperators.ACOSH);
+    f0.checkFails("^acosh(1)^",
+        "No match found for function signature ACOSH\\(<NUMERIC>\\)",
+        false);
+    final Consumer<SqlOperatorFixture> consumer = f -> {
+      f.checkType("acosh(1)", "DOUBLE NOT NULL");
+      f.checkType("acosh(cast(1 as Decimal))", "DOUBLE NOT NULL");
+      f.checkType("acosh(case when false then 1 else null end)", "DOUBLE");
+      f.checkType("acosh('abc')", "DOUBLE NOT NULL");
+      f.checkScalarApprox("acosh(1)", "DOUBLE NOT NULL",
+          isWithin(0d, 0.0001d));
+      f.checkScalarApprox("acosh(cast(10 as decimal))", "DOUBLE NOT NULL",
+          isWithin(2.9932d, 0.0001d));
+      f.checkNull("acosh(cast(null as integer))");
+      f.checkNull("acosh(cast(null as double))");
+      f.checkFails("acosh(0.1)",
+          "Input parameter of acosh cannot be less than 1!",
+          true);
+    };
+    f0.forEachLibrary(list(SqlLibrary.ALL), consumer);
+  }
+
+  @Test void testAsinhFunc() {
+    final SqlOperatorFixture f0 = fixture().setFor(SqlLibraryOperators.ASINH);
+    f0.checkFails("^asinh(1)^",
+        "No match found for function signature ASINH\\(<NUMERIC>\\)",
+        false);
+    final Consumer<SqlOperatorFixture> consumer = f -> {
+      f.checkType("asinh(1)", "DOUBLE NOT NULL");
+      f.checkType("asinh(cast(1 as Decimal))", "DOUBLE NOT NULL");
+      f.checkType("asinh(case when false then 1 else null end)", "DOUBLE");
+      f.checkType("asinh('abc')", "DOUBLE NOT NULL");
+      f.checkScalarApprox("asinh(-2.5)", "DOUBLE NOT NULL",
+          isWithin(-1.6472d, 0.0001d));
+      f.checkScalarApprox("asinh(cast(10 as decimal))", "DOUBLE NOT NULL",
+          isWithin(2.9982, 0.0001d));
+      f.checkNull("asinh(cast(null as integer))");
+      f.checkNull("asinh(cast(null as double))");
+    };
+    f0.forEachLibrary(list(SqlLibrary.ALL), consumer);
+  }
+
+  @Test void testAtanhFunc() {
+    final SqlOperatorFixture f0 = fixture().setFor(SqlLibraryOperators.ATANH);
+    f0.checkFails("^atanh(1)^",
+        "No match found for function signature ATANH\\(<NUMERIC>\\)",
+        false);
+    final Consumer<SqlOperatorFixture> consumer = f -> {
+      f.checkType("atanh(0.1)", "DOUBLE NOT NULL");
+      f.checkType("atanh(cast(0 as Decimal))", "DOUBLE NOT NULL");
+      f.checkType("atanh(case when false then 0 else null end)", "DOUBLE");
+      f.checkType("atanh('abc')", "DOUBLE NOT NULL");
+      f.checkScalarApprox("atanh(0.76159416)", "DOUBLE NOT NULL",
+          isWithin(1d, 0.0001d));
+      f.checkScalarApprox("atanh(cast(-0.1 as decimal))", "DOUBLE NOT NULL",
+          isWithin(-0.1003d, 0.0001d));
+      f.checkNull("atanh(cast(null as integer))");
+      f.checkNull("atanh(cast(null as double))");
+      f.checkFails("atanh(1)",
+          "Input parameter of atanh cannot be out of the range \\(-1, 1\\)!",
+          true);
+      f.checkFails("atanh(-1)",
+          "Input parameter of atanh cannot be out of the range \\(-1, 1\\)!",
+          true);
+    };
+    f0.forEachLibrary(list(SqlLibrary.ALL), consumer);
   }
 
   @Test void testCbrtFunc() {
@@ -9400,6 +9693,14 @@ public class SqlOperatorTest {
         "2015-02-01 00:00:00", "TIMESTAMP(0) NOT NULL");
     f.checkScalar("timestamp_trunc(timestamp '2015-02-19 12:34:56', year)",
         "2015-01-01 00:00:00", "TIMESTAMP(0) NOT NULL");
+    // verify return type for dates
+    f.checkScalar("timestamp_trunc(date '2008-12-25', month)",
+        "2008-12-01 00:00:00", "TIMESTAMP(0) NOT NULL");
+    f.checkFails("^timestamp_trunc(time '15:30:00', hour)^",
+        "Cannot apply 'TIMESTAMP_TRUNC' to arguments of type "
+            + "'TIMESTAMP_TRUNC\\(<TIME\\(0\\)>, <INTERVAL HOUR>\\)'\\. "
+            + "Supported form\\(s\\): 'TIMESTAMP_TRUNC\\(<TIMESTAMP>, <DATETIME_INTERVAL>\\)'",
+        false);
   }
 
   @Test void testDatetimeTrunc() {
@@ -9438,6 +9739,14 @@ public class SqlOperatorTest {
         "2015-02-01 00:00:00", "TIMESTAMP(0) NOT NULL");
     f.checkScalar("datetime_trunc(timestamp '2015-02-19 12:34:56', year)",
         "2015-01-01 00:00:00", "TIMESTAMP(0) NOT NULL");
+    // verify return type for dates
+    f.checkScalar("datetime_trunc(date '2008-12-25', month)",
+        "2008-12-01 00:00:00", "TIMESTAMP(0) NOT NULL");
+    f.checkFails("^datetime_trunc(time '15:30:00', hour)^",
+        "Cannot apply 'DATETIME_TRUNC' to arguments of type "
+            + "'DATETIME_TRUNC\\(<TIME\\(0\\)>, <INTERVAL HOUR>\\)'\\. "
+            + "Supported form\\(s\\): 'DATETIME_TRUNC\\(<TIMESTAMP>, <DATETIME_INTERVAL>\\)'",
+        false);
   }
 
   @Test void testDateTrunc() {
@@ -9474,6 +9783,14 @@ public class SqlOperatorTest {
         "2015-01-01", "DATE NOT NULL");
     f.checkScalar("date_trunc(date '2015-02-19', isoyear)",
         "2014-12-29", "DATE NOT NULL");
+    // verifies return type for TIME & TIMESTAMP
+    f.checkScalar("date_trunc(timestamp '2008-12-25 15:30:00', month)",
+        "2008-12-01 00:00:00", "TIMESTAMP(0) NOT NULL");
+    f.checkFails("^date_trunc(time '15:30:00', hour)^",
+        "Cannot apply 'DATE_TRUNC' to arguments of type "
+            + "'DATE_TRUNC\\(<TIME\\(0\\)>, <INTERVAL HOUR>\\)'\\. "
+            + "Supported form\\(s\\): 'DATE_TRUNC\\(<DATE>, <DATETIME_INTERVAL>\\)'",
+        false);
   }
 
   @Test void testFormatTime() {
@@ -9697,6 +10014,34 @@ public class SqlOperatorTest {
     f.checkFails(" ^percentile_disc(2 + 3)^ within group (order by 1)",
         "Argument to function 'PERCENTILE_DISC' must be a literal", false);
     f.checkFails(" ^percentile_disc(2)^ within group (order by 1)",
+        "Argument to function 'PERCENTILE_DISC' must be a numeric literal "
+            + "between 0 and 1", false);
+  }
+
+  @Test void testPercentileContBigQueryFunc() {
+    final SqlOperatorFixture f = fixture()
+        .setFor(SqlLibraryOperators.PERCENTILE_CONT2, SqlOperatorFixture.VmName.EXPAND)
+        .withLibrary(SqlLibrary.BIG_QUERY);
+    f.checkType("percentile_cont(1, .5)",
+        "DOUBLE NOT NULL");
+    f.checkType("percentile_cont(.5, .5 RESPECT NULLS)", "DOUBLE NOT NULL");
+    f.checkType("percentile_cont(1, .5 IGNORE NULLS)", "DOUBLE NOT NULL");
+    f.checkType("percentile_cont(2+3, .5 IGNORE NULLS)", "DOUBLE NOT NULL");
+    f.checkFails("^percentile_cont(1, 1.5)^",
+        "Argument to function 'PERCENTILE_CONT' must be a numeric literal "
+            + "between 0 and 1", false);
+  }
+
+  @Test void testPercentileDiscBigQueryFunc() {
+    final SqlOperatorFixture f = fixture()
+        .setFor(SqlLibraryOperators.PERCENTILE_DISC2, SqlOperatorFixture.VmName.EXPAND)
+        .withLibrary(SqlLibrary.BIG_QUERY);
+    f.checkType("percentile_disc(1, .5)",
+        "INTEGER NOT NULL");
+    f.checkType("percentile_disc(1, .5 RESPECT NULLS)", "INTEGER NOT NULL");
+    f.checkType("percentile_disc(0.75, .5 IGNORE NULLS)", "DECIMAL(3, 2) NOT NULL");
+    f.checkType("percentile_disc(2+3, .5 IGNORE NULLS)", "INTEGER NOT NULL");
+    f.checkFails("^percentile_disc(1, 1.5)^",
         "Argument to function 'PERCENTILE_DISC' must be a numeric literal "
             + "between 0 and 1", false);
   }

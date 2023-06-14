@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 package org.apache.calcite.test;
-
 import org.apache.calcite.config.CalciteConnectionConfigImpl;
 import org.apache.calcite.config.CalciteConnectionProperty;
 import org.apache.calcite.config.NullCollation;
@@ -65,10 +64,11 @@ import java.util.List;
 import java.util.Properties;
 import java.util.function.Consumer;
 
+import static org.hamcrest.CoreMatchers.instanceOf;
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.Is.isA;
+import static org.hamcrest.Matchers.hasSize;
 
 /**
  * Unit test for {@link org.apache.calcite.sql2rel.SqlToRelConverter}.
@@ -426,6 +426,15 @@ class SqlToRelConverterTest extends SqlToRelTestBase {
     sql("select sum(deptno) from emp group by ()").ok();
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-5717">[CALCITE-5717]
+   * RelBuilder.project should generate a Values if all expressions are literals
+   * and the input is an Aggregate that returns exactly one row</a>. */
+  @Test void testGroupEmptyYieldLiteral() {
+    // Expected plan is "VALUES 42". The result is one row even if EMP is empty.
+    sql("select 42 from emp group by ()").ok();
+  }
+
   // Same effect as writing "GROUP BY deptno"
   @Test void testSingletonGroupingSet() {
     sql("select sum(sal) from emp group by grouping sets (deptno)").ok();
@@ -443,8 +452,11 @@ class SqlToRelConverterTest extends SqlToRelTestBase {
    * Incorrect plan in with with ROLLUP inside GROUPING SETS</a>.
    *
    * <p>Equivalence example:
+   *
    * <blockquote>GROUP BY GROUPING SETS (ROLLUP(A, B), CUBE(C,D))</blockquote>
+   *
    * <p>is equal to
+   *
    * <blockquote>GROUP BY GROUPING SETS ((A,B), (A), (),
    * (C,D), (C), (D) )</blockquote>
    */
@@ -2704,7 +2716,7 @@ class SqlToRelConverterTest extends SqlToRelTestBase {
     visitor.visit(afterTrim);
 
     // Ensure sort and filter operators have consistent traitSet after trimming
-    assertThat(rels.size(), is(2));
+    assertThat(rels, hasSize(2));
     RelTrait filterCollation = rels.get(0).getTraitSet()
         .getTrait(RelCollationTraitDef.INSTANCE);
     RelTrait sortCollation = rels.get(1).getTraitSet()
@@ -2731,8 +2743,8 @@ class SqlToRelConverterTest extends SqlToRelTestBase {
       }
     };
     calc.accept(visitor);
-    assertThat(rels.size(), is(1));
-    assertThat(rels.get(0), isA(LogicalCalc.class));
+    assertThat(rels, hasSize(1));
+    assertThat(rels.get(0), instanceOf(LogicalCalc.class));
   }
 
   @Test void testRelShuttleForLogicalTableModify() {
@@ -2747,8 +2759,8 @@ class SqlToRelConverterTest extends SqlToRelTestBase {
       }
     };
     rel.accept(visitor);
-    assertThat(rels.size(), is(1));
-    assertThat(rels.get(0), isA(LogicalTableModify.class));
+    assertThat(rels, hasSize(1));
+    assertThat(rels.get(0), instanceOf(LogicalTableModify.class));
   }
 
   @Test void testOffset0() {
@@ -4751,7 +4763,7 @@ class SqlToRelConverterTest extends SqlToRelTestBase {
     LogicalTableModify modify = (LogicalTableModify) rel;
     List<RexNode> parameters = modify.getSourceExpressionList();
     assertThat(parameters, notNullValue());
-    assertThat(parameters.size(), is(2));
+    assertThat(parameters, hasSize(2));
     assertThat(parameters.get(0).getType().getSqlTypeName(), is(SqlTypeName.INTEGER));
     assertThat(parameters.get(1).getType().getSqlTypeName(), is(SqlTypeName.VARCHAR));
   }
