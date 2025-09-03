@@ -25,11 +25,9 @@ import org.apache.calcite.sql.validate.SqlValidatorNamespace;
 import org.apache.calcite.sql.validate.SqlValidatorScope;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
 
-import org.checkerframework.checker.nullness.qual.Nullable;
-
-import java.util.Objects;
-
 import static org.apache.calcite.util.Static.RESOURCE;
+
+import static java.util.Objects.requireNonNull;
 
 /**
  * An operator that applies a sort operation before rows are included in an aggregate function.
@@ -73,8 +71,8 @@ public class SqlWithinGroupOperator extends SqlBinaryOperator {
       throw validator.newValidationError(call, RESOURCE.withinGroupNotAllowed(operator.getName()));
     }
 
-    for (SqlNode order : Objects.requireNonNull(flat.orderList)) {
-      Objects.requireNonNull(validator.deriveType(scope, order));
+    for (SqlNode order : requireNonNull(flat.orderList)) {
+      requireNonNull(validator.deriveType(scope, order));
     }
     validator.validateAggregateParams(flat.aggregateCall, flat.filter,
         flat.distinctList, flat.orderList, scope);
@@ -84,7 +82,6 @@ public class SqlWithinGroupOperator extends SqlBinaryOperator {
       SqlValidator validator,
       SqlValidatorScope scope,
       SqlCall call) {
-
     SqlCall inner = call.operand(0);
     final SqlOperator operator = inner.getOperator();
     if (!operator.isAggregator()) {
@@ -117,7 +114,7 @@ public class SqlWithinGroupOperator extends SqlBinaryOperator {
     private final SqlNode collationColumn;
 
     private PercentileDiscCallBinding(SqlValidator validator,
-        @Nullable SqlValidatorScope scope,
+        SqlValidatorScope scope,
         SqlCall call,
         SqlNode collation) {
       super(validator, scope, call);

@@ -33,6 +33,7 @@ import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlInsert;
 import org.apache.calcite.sql.SqlIntervalQualifier;
+import org.apache.calcite.sql.SqlLambda;
 import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlMatchRecognize;
 import org.apache.calcite.sql.SqlMerge;
@@ -176,7 +177,7 @@ public interface SqlValidator {
    *                      type 'unknown'.
    * @throws RuntimeException if the query is not valid
    */
-  void validateQuery(SqlNode node, @Nullable SqlValidatorScope scope,
+  void validateQuery(SqlNode node, SqlValidatorScope scope,
       RelDataType targetRowType);
 
   /**
@@ -302,6 +303,16 @@ public interface SqlValidator {
   void validateMatchRecognize(SqlCall pattern);
 
   /**
+   * Validates a lambda expression. lambda expression will be validated twice
+   * during the validation process. The first time is validate lambda expression
+   * namespace, the second time is when validating higher order function operands
+   * type check.
+   *
+   * @param lambdaExpr Lambda expression
+   */
+  void validateLambda(SqlLambda lambdaExpr);
+
+  /**
    * Validates a call to an operator.
    *
    * @param call  Operator call
@@ -325,18 +336,6 @@ public interface SqlValidator {
   void validateAggregateParams(SqlCall aggCall, @Nullable SqlNode filter,
       @Nullable SqlNodeList distinctList, @Nullable SqlNodeList orderList,
       SqlValidatorScope scope);
-
-  /**
-   * Validates a COLUMN_LIST parameter.
-   *
-   * @param function function containing COLUMN_LIST parameter
-   * @param argTypes function arguments
-   * @param operands operands passed into the function call
-   */
-  void validateColumnListParams(
-      SqlFunction function,
-      List<RelDataType> argTypes,
-      List<SqlNode> operands);
 
   /**
    * If an identifier is a legitimate call to a function that has no
@@ -465,9 +464,7 @@ public interface SqlValidator {
    * @param includeSystemVars Whether to include system variables
    * @return expanded select clause
    */
-  SqlNodeList expandStar(
-      SqlNodeList selectList,
-      SqlSelect query,
+  SqlNodeList expandStar(SqlNodeList selectList, SqlSelect query,
       boolean includeSystemVars);
 
   /**
@@ -479,6 +476,8 @@ public interface SqlValidator {
    * @return naming scope of WHERE clause
    */
   SqlValidatorScope getWhereScope(SqlSelect select);
+
+  SqlValidatorScope getMeasureScope(SqlSelect select);
 
   /**
    * Returns the type factory used by this validator.
@@ -498,9 +497,7 @@ public interface SqlValidator {
    * @param type Its type; must not be null
    */
   @API(status = API.Status.INTERNAL, since = "1.24")
-  void setValidatedNodeType(
-      SqlNode node,
-      RelDataType type);
+  void setValidatedNodeType(SqlNode node, RelDataType type);
 
   /**
    * Removes a node from the set of validated nodes.
@@ -568,7 +565,7 @@ public interface SqlValidator {
    * @param select SELECT statement
    * @return naming scope for FROM clause
    */
-  @Nullable SqlValidatorScope getFromScope(SqlSelect select);
+  SqlValidatorScope getFromScope(SqlSelect select);
 
   /**
    * Returns a scope containing the objects visible from the ON and USING
@@ -579,7 +576,7 @@ public interface SqlValidator {
    * @return naming scope for JOIN clause
    * @see #getFromScope
    */
-  @Nullable SqlValidatorScope getJoinScope(SqlNode node);
+  SqlValidatorScope getJoinScope(SqlNode node);
 
   /**
    * Returns a scope containing the objects visible from the GROUP BY clause
@@ -617,6 +614,19 @@ public interface SqlValidator {
    * @return naming scope for Match recognize clause
    */
   SqlValidatorScope getMatchRecognizeScope(SqlMatchRecognize node);
+
+  /**
+   * Returns the lambda expression scope.
+   *
+   * @param node Lambda expression
+   * @return naming scope for lambda expression
+   */
+  SqlValidatorScope getLambdaScope(SqlLambda node);
+
+  /**
+   * Returns a scope that cannot see anything.
+   */
+  SqlValidatorScope getEmptyScope();
 
   /**
    * Declares a SELECT expression as a cursor.
@@ -774,7 +784,7 @@ public interface SqlValidator {
 
   void validateSequenceValue(SqlValidatorScope scope, SqlIdentifier id);
 
-  @Nullable SqlValidatorScope getWithScope(SqlNode withItem);
+  SqlValidatorScope getWithScope(SqlNode withItem);
 
   /** Get the type coercion instance. */
   TypeCoercion getTypeCoercion();
@@ -821,7 +831,7 @@ public interface SqlValidator {
    * Provides methods to set each configuration option.
    */
   @Value.Immutable(singleton = false)
-  public interface Config {
+  interface Config {
     /** Default configuration. */
     SqlValidator.Config DEFAULT = ImmutableSqlValidator.Config.builder()
         .withTypeCoercionFactory(TypeCoercions::createTypeCoercion)
@@ -880,6 +890,27 @@ public interface SqlValidator {
     Config withIdentifierExpansion(boolean expand);
 
     /**
+     * Returns whether to treat the query being validated as embedded
+     * (as opposed to top-level).
+     *
+     * <p>The default, false, treats the query as top-level;
+     * a value of true treats it as a query inside another, as would be the case
+     * for a view or common table expression.
+     *
+     * <p>Possible behavior differences include ignoring the {@code ORDER BY}
+     * clause of an embedded query, or converting measure expressions of a
+     * non-embedded query into values. */
+    @Value.Default default boolean embeddedQuery() {
+      return false;
+    }
+
+    /**
+     * Sets whether to treat the query being validated as embedded
+     * (as opposed to top-level).
+     */
+    Config withEmbeddedQuery(boolean embedded);
+
+    /**
      * Returns whether this validator should be lenient upon encountering an
      * unknown function, default false.
      *
@@ -904,15 +935,39 @@ public interface SqlValidator {
      */
     Config withLenientOperatorLookup(boolean lenient);
 
-    /** Returns whether the validator allows measures to be used without the
-     * AGGREGATE function. Default is true. */
-    @Value.Default default boolean nakedMeasures() {
+    /** Returns whether the validator allows measures to be used without
+     * AGGREGATE function in a non-aggregate query. Default is true.
+     */
+    @Value.Default default boolean nakedMeasuresInNonAggregateQuery() {
       return true;
     }
 
+    /** Sets whether the validator allows measures to be used without AGGREGATE
+     * function in a non-aggregate query.
+     */
+    Config withNakedMeasuresInNonAggregateQuery(boolean value);
+
+    /** Returns whether the validator allows measures to be used without
+     * AGGREGATE function in an aggregate query. Default is true.
+     */
+    @Value.Default default boolean nakedMeasuresInAggregateQuery() {
+      return true;
+    }
+
+    /** Sets whether the validator allows measures to be used without AGGREGATE
+     * function in an aggregate query.
+     */
+    Config withNakedMeasuresInAggregateQuery(boolean value);
+
     /** Sets whether the validator allows measures to be used without the
-     * AGGREGATE function. */
-    Config withNakedMeasures(boolean nakedMeasures);
+     * AGGREGATE function inside or outside aggregate queries.
+     * Deprecated: use the inside / outside variants instead.
+     */
+    @Deprecated // to be removed before 1.38
+    default Config withNakedMeasures(boolean nakedMeasures) {
+      return withNakedMeasuresInAggregateQuery(nakedMeasures)
+              .withNakedMeasuresInNonAggregateQuery(nakedMeasures);
+    }
 
     /** Returns whether the validator supports implicit type coercion. */
     @Value.Default default boolean typeCoercionEnabled() {

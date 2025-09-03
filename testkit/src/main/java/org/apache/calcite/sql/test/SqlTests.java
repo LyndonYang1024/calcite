@@ -45,6 +45,8 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasToString;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import static java.lang.Integer.parseInt;
+
 /**
  * Utility methods.
  */
@@ -61,6 +63,15 @@ public abstract class SqlTests {
    * Checker which allows any type.
    */
   public static final TypeChecker ANY_TYPE_CHECKER = (sql, type) -> {
+  };
+
+  /**
+   * Checker which enforces that a data type is nullable.
+   */
+  public static final TypeChecker ANY_NULLABLE_TYPE_CHECKER = (sql, type) -> {
+    if (!type.isNullable()) {
+      fail("expected nullable, got " + sql);
+    }
   };
 
   /**
@@ -249,11 +260,29 @@ public abstract class SqlTests {
     int actualEndLine = 100;
     int actualEndColumn = 99;
 
+    if (ex instanceof ExceptionInInitializerError) {
+      ex = ((ExceptionInInitializerError) ex).getException();
+    }
+
     // Search for an CalciteContextException somewhere in the stack.
     CalciteContextException ece = null;
     for (Throwable x = ex; x != null; x = x.getCause()) {
       if (x instanceof CalciteContextException) {
         ece = (CalciteContextException) x;
+        break;
+      }
+      if (x.getCause() == x) {
+        break;
+      }
+    }
+
+    // Search for an IllegalStateException somewhere in the stack.
+    // These are thrown by the enumerable implementors when evaluating
+    // an expression that produces an error.
+    IllegalStateException ise = null;
+    for (Throwable x = ex; x != null; x = x.getCause()) {
+      if (x instanceof IllegalStateException) {
+        ise = (IllegalStateException) x;
         break;
       }
       if (x.getCause() == x) {
@@ -293,22 +322,32 @@ public abstract class SqlTests {
         actualException = spe.getCause();
         actualMessage = actualException.getMessage();
       }
+    } else if (ise != null) {
+      Throwable[] suppressed = ise.getSuppressed();
+      if (suppressed.length > 0) {
+        actualException = suppressed[0];
+        actualMessage = actualException.getMessage();
+      }
     } else {
-      final String message = ex.getMessage();
-      if (message != null) {
+      actualMessage = ex.getMessage();
+      if (ex instanceof NumberFormatException) {
+        // The message from NumberFormatException is not very usable
+        actualMessage = "Number has wrong format " + actualMessage;
+      }
+      if (actualMessage != null) {
         java.util.regex.Matcher matcher =
-            LINE_COL_TWICE_PATTERN.matcher(message);
+            LINE_COL_TWICE_PATTERN.matcher(actualMessage);
         if (matcher.matches()) {
-          actualLine = Integer.parseInt(matcher.group(1));
-          actualColumn = Integer.parseInt(matcher.group(2));
-          actualEndLine = Integer.parseInt(matcher.group(3));
-          actualEndColumn = Integer.parseInt(matcher.group(4));
+          actualLine = parseInt(matcher.group(1));
+          actualColumn = parseInt(matcher.group(2));
+          actualEndLine = parseInt(matcher.group(3));
+          actualEndColumn = parseInt(matcher.group(4));
           actualMessage = matcher.group(5);
         } else {
-          matcher = LINE_COL_PATTERN.matcher(message);
+          matcher = LINE_COL_PATTERN.matcher(actualMessage);
           if (matcher.matches()) {
-            actualLine = Integer.parseInt(matcher.group(1));
-            actualColumn = Integer.parseInt(matcher.group(2));
+            actualLine = parseInt(matcher.group(1));
+            actualColumn = parseInt(matcher.group(2));
           } else {
             if (expectedMsgPattern != null
                 && actualMessage.matches(expectedMsgPattern)) {

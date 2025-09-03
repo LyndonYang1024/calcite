@@ -93,8 +93,9 @@ public class MockDdlExecutor extends DdlExecutorImpl {
       path = Util.skipLast(id.names);
       name = Util.last(id.names);
     }
-    CalciteSchema schema = mutable ? context.getMutableRootSchema()
-        : context.getRootSchema();
+    CalciteSchema schema =
+        mutable ? context.getMutableRootSchema()
+            : context.getRootSchema();
     for (String p : path) {
       schema = requireNonNull(schema.getSubSchema(p, true));
     }
@@ -126,6 +127,7 @@ public class MockDdlExecutor extends DdlExecutorImpl {
     final CalciteSchema schema =
         Schemas.subSchema(context.getRootSchema(),
             context.getDefaultSchemaPath());
+    requireNonNull(schema, "schema");
     final JavaTypeFactory typeFactory = context.getTypeFactory();
     final RelDataType queryRowType;
     if (create.query != null) {
@@ -239,7 +241,7 @@ public class MockDdlExecutor extends DdlExecutorImpl {
   @SuppressWarnings({"unchecked", "rawtypes"})
   protected void forEachNameType(SqlCreateTable createTable,
       BiConsumer<SqlIdentifier, SqlDataTypeSpec> consumer) {
-    createTable.columnList.forEach(sqlNode -> {
+    requireNonNull(createTable.columnList).forEach(sqlNode -> {
       if (sqlNode instanceof SqlColumnDeclaration) {
         final SqlColumnDeclaration d = (SqlColumnDeclaration) sqlNode;
         consumer.accept(d.name, d.dataType);

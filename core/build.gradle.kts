@@ -71,6 +71,8 @@ dependencies {
     implementation("org.apache.commons:commons-dbcp2")
     implementation("org.apache.commons:commons-lang3")
     implementation("org.apache.commons:commons-math3")
+    implementation("org.apache.commons:commons-text")
+    implementation("org.jooq:joou-java-6")
     implementation("commons-io:commons-io")
     implementation("org.codehaus.janino:commons-compiler")
     implementation("org.codehaus.janino:janino")
@@ -87,13 +89,12 @@ dependencies {
     testPostgresql("org.postgresql:postgresql")
 
     testImplementation(project(":testkit"))
-    testImplementation("commons-lang:commons-lang")
     testImplementation("net.bytebuddy:byte-buddy")
     testImplementation("net.hydromatic:foodmart-queries")
     testImplementation("net.hydromatic:quidem")
     testImplementation("org.apache.calcite.avatica:avatica-server")
     testImplementation("org.apache.commons:commons-pool2")
-    testImplementation("org.hsqldb:hsqldb")
+    testImplementation("org.hsqldb:hsqldb::jdk8")
     testImplementation("sqlline:sqlline")
     testImplementation(kotlin("stdlib-jdk8"))
     testImplementation(kotlin("test"))
@@ -113,7 +114,7 @@ tasks.jar {
     }
 }
 
-val generatedVersionDir = File(buildDir, "generated/sources/version")
+val generatedVersionDir = layout.buildDirectory.get().file("generated/sources/version")
 val versionClass by tasks.registering(Sync::class) {
     val re = Regex("^(\\d+)\\.(\\d+).*")
 
@@ -149,7 +150,7 @@ val versionClass by tasks.registering(Sync::class) {
 }
 
 ide {
-    generatedJavaSources(versionClass.get(), generatedVersionDir)
+    generatedJavaSources(versionClass.get(), generatedVersionDir.asFile)
 }
 
 sourceSets {
@@ -211,6 +212,11 @@ tasks.withType<AutostyleTask>().configureEach {
     mustRunAfter(javaCCTest)
 }
 
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+}
 ide {
     fun generatedSource(javacc: TaskProvider<org.apache.calcite.buildtools.javacc.JavaCCTask>, sourceSet: String) =
         generatedJavaSources(javacc.get(), javacc.get().output.get().asFile, sourceSets.named(sourceSet))
@@ -270,8 +276,12 @@ val integTestAll by tasks.registering() {
     description = "Executes integration JDBC tests for all DBs"
 }
 
+fun capitalize(input: String): String {
+    return input.replaceFirstChar { it.uppercaseChar() }
+}
+
 for (db in listOf("h2", "mysql", "oracle", "postgresql")) {
-    val task = tasks.register("integTest" + db.capitalize(), Test::class) {
+    val task = tasks.register("integTest" + capitalize(db), Test::class) {
         group = LifecycleBasePlugin.VERIFICATION_GROUP
         description = "Executes integration JDBC tests with $db database"
         include("org/apache/calcite/test/JdbcAdapterTest.class")
@@ -279,7 +289,7 @@ for (db in listOf("h2", "mysql", "oracle", "postgresql")) {
         systemProperty("calcite.test.db", db)
         // Include the jars from the custom configuration to the classpath
         // otherwise the JDBC drivers for each DBMS will be missing
-        classpath = classpath + configurations.getAt("test" + db.capitalize())
+        classpath += configurations.getAt("test" + capitalize(db))
     }
     integTestAll {
         dependsOn(task)

@@ -36,6 +36,8 @@ import java.util.Objects;
 
 import static org.apache.calcite.util.Static.RESOURCE;
 
+import static java.util.Objects.requireNonNull;
+
 /**
  * Abstract base for a scope which is defined by a list of child namespaces and
  * which inherits from a parent scope.
@@ -58,7 +60,7 @@ public abstract class ListScope extends DelegatingScope {
 
   @Override public void addChild(SqlValidatorNamespace ns, String alias,
       boolean nullable) {
-    Objects.requireNonNull(alias, "alias");
+    requireNonNull(alias, "alias");
     children.add(new ScopeChild(children.size(), alias, ns, nullable));
   }
 
@@ -115,6 +117,8 @@ public abstract class ListScope extends DelegatingScope {
           return child;
         }
       }
+      // Make sure namespace has been validated.
+      validator.validateNamespace(child.namespace, validator.getUnknownType());
 
       // Look up the 2 tables independently, in case one is qualified with
       // catalog & schema and the other is not.
@@ -202,7 +206,8 @@ public abstract class ListScope extends DelegatingScope {
       final Step path =
           Path.EMPTY.plus(child0.namespace.getRowType(), child0.ordinal,
               child0.name, StructKind.FULLY_QUALIFIED);
-      resolved.found(child0.namespace, child0.nullable, this, path, null);
+      resolved.found(child0.namespace, child0.nullable, this, path,
+          ImmutableList.of());
       return;
     }
 

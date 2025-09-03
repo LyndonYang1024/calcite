@@ -19,6 +19,7 @@ package org.apache.calcite.util;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.adapter.enumerable.EnumerableTableScan;
 import org.apache.calcite.adapter.java.AbstractQueryableTable;
+import org.apache.calcite.avatica.util.ByteString;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.linq4j.AbstractEnumerable;
 import org.apache.calcite.linq4j.BaseQueryable;
@@ -40,6 +41,7 @@ import org.apache.calcite.rel.externalize.RelJsonReader;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexLiteral;
+import org.apache.calcite.runtime.PairList;
 import org.apache.calcite.runtime.SqlFunctions;
 import org.apache.calcite.schema.FunctionContext;
 import org.apache.calcite.schema.FunctionParameter;
@@ -71,18 +73,19 @@ import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.util.AbstractList;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
+
+import static java.lang.Integer.parseInt;
+import static java.util.Objects.requireNonNull;
 
 /**
  * Holder for various classes and functions used in tests as user-defined
@@ -140,6 +143,21 @@ public class Smalls {
 
   private Smalls() {}
 
+  private static QueryableTable identity(Integer i) {
+    final Enumerable<Integer> enumerable = Linq4j.asEnumerable(ImmutableList.of(i));
+    return new AbstractQueryableTable(Integer.class) {
+      @Override public <E> Queryable<E> asQueryable(
+          QueryProvider queryProvider, SchemaPlus schema, String tableName) {
+        //noinspection unchecked
+        return (Queryable<E>) enumerable.asQueryable();
+      }
+
+      @Override public RelDataType getRowType(RelDataTypeFactory typeFactory) {
+        return typeFactory.builder().add("i", SqlTypeName.INTEGER).build();
+      }
+    };
+  }
+
   private static QueryableTable oneThreePlus(String s) {
     List<Integer> items;
     // Argument is null in case SQL contains function call with expression.
@@ -147,7 +165,7 @@ public class Smalls {
     if (s == null) {
       items = ImmutableList.of();
     } else {
-      Integer latest = Integer.parseInt(s.substring(1, s.length() - 1));
+      Integer latest = parseInt(s.substring(1, s.length() - 1));
       items = ImmutableList.of(1, 3, latest);
     }
     final Enumerable<Integer> enumerable = Linq4j.asEnumerable(items);
@@ -498,7 +516,7 @@ public class Smalls {
    * and named parameters. */
   public static class MyPlusFunction {
     public static final ThreadLocal<AtomicInteger> INSTANCE_COUNT =
-        new ThreadLocal<>().withInitial(() -> new AtomicInteger(0));
+        ThreadLocal.withInitial(AtomicInteger::new);
 
     // Note: Not marked @Deterministic
     public MyPlusFunction() {
@@ -515,7 +533,7 @@ public class Smalls {
    * {@link org.apache.calcite.schema.FunctionContext} parameter. */
   public static class MyPlusInitFunction {
     public static final ThreadLocal<AtomicInteger> INSTANCE_COUNT =
-        new ThreadLocal<>().withInitial(() -> new AtomicInteger(0));
+        ThreadLocal.withInitial(AtomicInteger::new);
     public static final ThreadLocal<String> THREAD_DIGEST =
         new ThreadLocal<>();
 
@@ -550,7 +568,7 @@ public class Smalls {
   /** As {@link MyPlusFunction} but declared to be deterministic. */
   public static class MyDeterministicPlusFunction {
     public static final ThreadLocal<AtomicInteger> INSTANCE_COUNT =
-        new ThreadLocal<>().withInitial(() -> new AtomicInteger(0));
+        ThreadLocal.withInitial(AtomicInteger::new);
 
     @Deterministic public MyDeterministicPlusFunction() {
       INSTANCE_COUNT.get().incrementAndGet();
@@ -663,6 +681,15 @@ public class Smalls {
         throw new IOException("IOException when argument > 100");
       }
       return x + 10;
+    }
+  }
+
+  /** User-defined function with niladic parentheses. */
+  public static class MyNiladicParenthesesFunction {
+    // This is a constant function that tests for niladic parentheses,
+    // and it returns the constant value foo
+    public String eval() {
+      return "foo";
     }
   }
 
@@ -884,7 +911,7 @@ public class Smalls {
    * The constructor has an initialization parameter. */
   public static class MyTwoParamsSumFunctionFilter1 {
     public MyTwoParamsSumFunctionFilter1(FunctionContext fx) {
-      Objects.requireNonNull(fx, "fx");
+      requireNonNull(fx, "fx");
       assert fx.getParameterCount() == 2;
     }
     public int init() {
@@ -1057,6 +1084,13 @@ public class Smalls {
   public static class TestStaticTableFunction {
     public static QueryableTable eval(String s) {
       return oneThreePlus(s);
+    }
+  }
+
+  /** A table function that returns its input value. */
+  public static class IdentityTableFunction {
+    public static QueryableTable eval(Integer i) {
+      return identity(i);
     }
   }
 
@@ -1359,12 +1393,12 @@ public class Smalls {
 
     @Override public RelDataType getRowType(RelDataTypeFactory typeFactory) {
       int columnCount = columnNames.length;
-      final List<Pair<String, RelDataType>> columnDesc =
-          new ArrayList<>(columnCount);
+      final PairList<String, RelDataType> columnDesc =
+          PairList.withCapacity(columnCount);
       for (int i = 0; i < columnCount; i++) {
         final RelDataType colType = typeFactory
             .createJavaType(columnTypes[i]);
-        columnDesc.add(Pair.of(columnNames[i], colType));
+        columnDesc.add(columnNames[i], colType);
       }
       return typeFactory.createStructType(columnDesc);
     }
@@ -1442,6 +1476,20 @@ public class Smalls {
               Expressions.constant(tableName));
       return Expressions.call(queryableExpression,
           BuiltInMethod.QUERYABLE_AS_ENUMERABLE.method);
+    }
+  }
+
+  /** User-defined function that decodes a Base64 string to bytes. */
+  public static class MyUnbase64Function {
+    public static ByteString eval(String s) {
+      if (s == null) {
+        return null;
+      }
+      try {
+        return ByteString.ofBase64(s);
+      } catch (Exception e) {
+        return null;
+      }
     }
   }
 }

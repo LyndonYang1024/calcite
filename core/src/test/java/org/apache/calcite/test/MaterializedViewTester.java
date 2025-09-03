@@ -18,7 +18,6 @@ package org.apache.calcite.test;
 
 import org.apache.calcite.DataContexts;
 import org.apache.calcite.adapter.enumerable.EnumerableTableScan;
-import org.apache.calcite.adapter.java.ReflectiveSchema;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.jdbc.JavaTypeFactoryImpl;
@@ -53,8 +52,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 
-import static java.util.Objects.requireNonNull;
-
 /**
  * Abstract base class for testing materialized views.
  *
@@ -79,7 +76,7 @@ public abstract class MaterializedViewTester {
     if (substitutes.stream()
         .noneMatch(sub -> checker.test(RelOptUtil.toString(sub)))) {
       StringBuilder substituteMessages = new StringBuilder();
-      for (RelNode sub: substitutes) {
+      for (RelNode sub : substitutes) {
         substituteMessages.append(RelOptUtil.toString(sub)).append("\n");
       }
       throw new AssertionError("Materialized view failed to be matched by optimized results:\n"
@@ -100,7 +97,7 @@ public abstract class MaterializedViewTester {
     }
     final StringBuilder errMsgBuilder = new StringBuilder();
     errMsgBuilder.append("Optimization succeeds out of expectation: ");
-    for (RelNode res: results) {
+    for (RelNode res : results) {
       errMsgBuilder.append(RelOptUtil.toString(res)).append("\n");
     }
     throw new AssertionError(errMsgBuilder.toString());
@@ -114,7 +111,7 @@ public abstract class MaterializedViewTester {
         if (f.schemaSpec == null) {
           defaultSchema =
               rootSchema.add("hr",
-                  new ReflectiveSchema(new MaterializationTest.HrFKUKSchema()));
+                  new ReflectiveSchemaWithoutRowCount(new MaterializationTest.HrFKUKSchema()));
         } else {
           defaultSchema = CalciteAssert.addSchema(rootSchema, f.schemaSpec);
         }
@@ -124,13 +121,13 @@ public abstract class MaterializedViewTester {
             RelFactories.LOGICAL_BUILDER.create(cluster, relOptSchema);
         final MaterializationService.DefaultTableFactory tableFactory =
             new MaterializationService.DefaultTableFactory();
-        for (Pair<String, String> pair: f.materializationList) {
-          String sql = requireNonNull(pair.left, "sql");
+        for (Pair<String, String> pair : f.materializationList) {
+          String sql = pair.left;
           final RelNode mvRel = toRel(cluster, rootSchema, defaultSchema, sql);
           final Table table =
               tableFactory.createTable(CalciteSchema.from(rootSchema),
                   sql, ImmutableList.of(defaultSchema.getName()));
-          String name = requireNonNull(pair.right, "name");
+          String name = pair.right;
           defaultSchema.add(name, table);
           relBuilder.scan(defaultSchema.getName(), name);
           final LogicalTableScan logicalScan = (LogicalTableScan) relBuilder.build();

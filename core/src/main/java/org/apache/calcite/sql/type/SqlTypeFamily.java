@@ -65,6 +65,7 @@ public enum SqlTypeFamily implements RelDataTypeFamily {
   STRING,
   APPROXIMATE_NUMERIC,
   EXACT_NUMERIC,
+  UNSIGNED_NUMERIC,
   DECIMAL,
   INTEGER,
   DATETIME,
@@ -77,6 +78,9 @@ public enum SqlTypeFamily implements RelDataTypeFamily {
   CURSOR,
   COLUMN_LIST,
   GEO,
+  FUNCTION,
+  VARIANT,
+  UUID,
   /** Like ANY, but do not even validate the operand. It may not be an
    * expression. */
   IGNORE;
@@ -118,6 +122,7 @@ public enum SqlTypeFamily implements RelDataTypeFamily {
 
           .put(ExtraSqlTypes.REF_CURSOR, CURSOR)
           .put(Types.ARRAY, ARRAY)
+          .put(Types.JAVA_OBJECT, VARIANT)
           .build();
 
   /**
@@ -178,9 +183,13 @@ public enum SqlTypeFamily implements RelDataTypeFamily {
     case DATE:
       return ImmutableList.of(SqlTypeName.DATE);
     case TIME:
-      return ImmutableList.of(SqlTypeName.TIME, SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE);
+      return ImmutableList.of(SqlTypeName.TIME,
+          SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE,
+          SqlTypeName.TIME_TZ);
     case TIMESTAMP:
-      return ImmutableList.of(SqlTypeName.TIMESTAMP, SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE);
+      return ImmutableList.of(SqlTypeName.TIMESTAMP,
+          SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE,
+          SqlTypeName.TIMESTAMP_TZ);
     case BOOLEAN:
       return SqlTypeName.BOOLEAN_TYPES;
     case INTERVAL_YEAR_MONTH:
@@ -193,6 +202,8 @@ public enum SqlTypeFamily implements RelDataTypeFamily {
       return SqlTypeName.APPROX_TYPES;
     case EXACT_NUMERIC:
       return SqlTypeName.EXACT_TYPES;
+    case UNSIGNED_NUMERIC:
+      return SqlTypeName.UNSIGNED_TYPES;
     case INTEGER:
       return SqlTypeName.INT_TYPES;
     case DATETIME:
@@ -215,6 +226,12 @@ public enum SqlTypeFamily implements RelDataTypeFamily {
       return ImmutableList.of(SqlTypeName.CURSOR);
     case COLUMN_LIST:
       return ImmutableList.of(SqlTypeName.COLUMN_LIST);
+    case FUNCTION:
+      return ImmutableList.of(SqlTypeName.FUNCTION);
+    case UUID:
+      return ImmutableList.of(SqlTypeName.UUID);
+    case VARIANT:
+      return ImmutableList.of(SqlTypeName.VARIANT);
     default:
       throw new IllegalArgumentException();
     }
@@ -270,6 +287,14 @@ public enum SqlTypeFamily implements RelDataTypeFamily {
       return factory.createSqlType(SqlTypeName.CURSOR);
     case COLUMN_LIST:
       return factory.createSqlType(SqlTypeName.COLUMN_LIST);
+    case FUNCTION:
+      return factory.createFunctionSqlType(
+          factory.createStructType(ImmutableList.of(), ImmutableList.of()),
+          factory.createSqlType(SqlTypeName.ANY));
+    case UUID:
+      return factory.createSqlType(SqlTypeName.UUID);
+    case VARIANT:
+      return factory.createSqlType(SqlTypeName.VARIANT);
     default:
       return null;
     }

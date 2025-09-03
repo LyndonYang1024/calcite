@@ -22,6 +22,7 @@ import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.sql.SqlOperatorBinding;
 import org.apache.calcite.util.Util;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.apache.calcite.sql.type.NonNullableAccessors.getCharset;
@@ -52,6 +53,22 @@ public abstract class SqlTypeTransforms {
               opBinding.collectOperandTypes(),
               requireNonNull(typeToTransform, "typeToTransform"));
 
+  /**
+   * Parameter type-inference transform strategy where a derived type is
+   * transformed into the same type, but nullable if and only if the type
+   * is a ARRAY type and contains nullable elements.
+   */
+  public static final SqlTypeTransform TO_NULLABLE_IF_ARRAY_CONTAINS_NULLABLE =
+      (opBinding, typeToTransform) -> {
+        RelDataType relDataType = opBinding.getOperandType(0);
+        if (SqlTypeUtil.isArray(relDataType)) {
+          RelDataType componentRelDataType = relDataType.getComponentType();
+          assert componentRelDataType != null;
+          return opBinding.getTypeFactory().createTypeWithNullability(typeToTransform,
+              componentRelDataType.isNullable());
+        }
+        return typeToTransform;
+      };
   /**
    * Parameter type-inference transform strategy where a derived type is
    * transformed into the same type, but nullable if and only if all of a call's
@@ -105,6 +122,30 @@ public abstract class SqlTypeTransforms {
       (opBinding, typeToTransform) -> {
         RelDataType arg0 = opBinding.getOperandType(0);
         if (arg0.isNullable()) {
+          return opBinding.getTypeFactory()
+              .createTypeWithNullability(typeToTransform, true);
+        }
+        return typeToTransform;
+      };
+
+  /**
+   * Parameter type-inference transform strategy where a derived type is
+   * transformed into the same type but nullable if any of element of a calls operands is
+   * nullable.
+   */
+  public static final SqlTypeTransform COLLECTION_ELEMENT_TYPE_NULLABLE =
+      (opBinding, typeToTransform) -> {
+        final List<RelDataType> argComponentTypes = new ArrayList<>();
+        for (RelDataType arrayType : opBinding.collectOperandTypes()) {
+          final RelDataType componentType = arrayType.getComponentType();
+          if (componentType == null) {
+            // NULL supplied for array
+            return arrayType;
+          }
+          argComponentTypes.add(componentType);
+        }
+
+        if (argComponentTypes.stream().anyMatch(RelDataType::isNullable)) {
           return opBinding.getTypeFactory()
               .createTypeWithNullability(typeToTransform, true);
         }
@@ -203,13 +244,29 @@ public abstract class SqlTypeTransforms {
 
   /**
    * Parameter type-inference transform strategy that wraps a given type
-   * in a array.
+   * in an array.
    *
    * @see org.apache.calcite.rel.type.RelDataTypeFactory#createArrayType(RelDataType, long)
    */
   public static final SqlTypeTransform TO_ARRAY =
       (opBinding, typeToTransform) ->
           opBinding.getTypeFactory().createArrayType(typeToTransform, -1);
+
+  /**
+   * Parameter type-inference transform strategy that wraps a given type in an array,
+   * but nullable if any of element of a calls operands is nullable.
+   */
+  public static final SqlTypeTransform TO_ARRAY_NULLABLE =
+      (opBinding, typeToTransform) ->
+          TO_NULLABLE.transformType(opBinding, TO_ARRAY.transformType(opBinding, typeToTransform));
+
+  /**
+   * Parameter type-inference transform strategy that wraps a given type in a nullabe array.
+   */
+  public static final SqlTypeTransform TO_ARRAY_FORCE_NULLABLE =
+      (opBinding, typeToTransform) ->
+          FORCE_NULLABLE.transformType(opBinding,
+              TO_ARRAY.transformType(opBinding, typeToTransform));
 
   /** Parameter type-inference transform that transforms {@code T} to
    * {@code MEASURE<T>} for some type T. */
@@ -221,7 +278,15 @@ public abstract class SqlTypeTransforms {
    * {@code T} for some type T. Inverse of {@link #TO_MEASURE}. */
   public static final SqlTypeTransform FROM_MEASURE =
       (opBinding, typeToTransform) ->
-          ((MeasureSqlType) typeToTransform).types.get(0);
+          SqlTypeUtil.fromMeasure(opBinding.getTypeFactory(), typeToTransform);
+
+  /** Parameter type-inference transform that transforms {@code MEASURE<T>} to
+   * {@code T} for some type T, and does nothing to other types. */
+  public static final SqlTypeTransform FROM_MEASURE_IF =
+      (opBinding, typeToTransform) ->
+          SqlTypeUtil.isMeasure(typeToTransform)
+              ? ((MeasureSqlType) typeToTransform).types.get(0)
+              : typeToTransform;
 
   /**
    * Parameter type-inference transform strategy that wraps a given type in an array or
@@ -243,6 +308,28 @@ public abstract class SqlTypeTransforms {
       (opBinding, typeToTransform) ->
           SqlTypeUtil.createMapTypeFromRecord(opBinding.getTypeFactory(),
               typeToTransform);
+
+  /**
+   * Parameter type-inference transform strategy that converts a two-field
+   * record type to a MAP query type.
+   *
+   * @see org.apache.calcite.sql.fun.SqlMapQueryConstructor
+   */
+  public static final SqlTypeTransform TO_MAP_QUERY =
+      (opBinding, typeToTransform) ->
+          TO_MAP.transformType(opBinding,
+              SqlTypeUtil.deriveCollectionQueryComponentType(SqlTypeName.MAP, typeToTransform));
+
+  /**
+   * Parameter type-inference transform strategy that converts a type to a MAP type,
+   * which key and value type is same.
+   *
+   * @see org.apache.calcite.rel.type.RelDataTypeFactory#createMapType
+   */
+  public static final SqlTypeTransform IDENTITY_TO_MAP =
+      (opBinding, typeToTransform) ->
+          SqlTypeUtil.createMapType(opBinding.getTypeFactory(),
+              typeToTransform, typeToTransform, false);
 
   /**
    * Parameter type-inference transform strategy that converts a MAP type

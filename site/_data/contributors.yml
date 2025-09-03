@@ -28,8 +28,8 @@
 - name: Alessandro Solimando
   apacheId: asolimando
   githubId: asolimando
-  org: Cloudera
-  role: Committer
+  org:
+  role: PMC
 - name: Aman Sinha
   apacheId: amansinha
   githubId: amansinha100
@@ -56,6 +56,12 @@
   githubId: bchapuis
   org: HEIG-VD
   role: Committer
+- name: Cancai Cai
+  apacheId: cancai
+  githubId: caicancai
+  pronouns: he/him
+  org:
+  role: Committer
 - name: Chris Baynes
   apacheId: cbaynes
   githubId: chris-baynes
@@ -71,6 +77,12 @@
   githubId: chunweilei
   org: Alibaba
   role: PMC
+- name: Dan Zou
+  apacheId: zoudan
+  githubId: zoudan
+  pronouns: he/him
+  org: ByteDance
+  role: Committer
 - name: Danny Chan
   apacheId: danny0405
   githubId: danny0405
@@ -85,6 +97,11 @@
   apacheId: ebegoli
   githubId: ebegoli
   org: Oak Ridge National Laboratory
+  role: Committer
+- name: Fanyuan Qiu
+  apacheId: suibianwanwan
+  githubId: suibianwanwank
+  org:
   role: Committer
 - name: Feng Zhu
   apacheId: fengzhu
@@ -112,6 +129,12 @@
   githubId: hsyuan
   org: Alibaba
   role: PMC
+- name: Hongyu Guo
+  apacheId: guohongyu
+  githubId: macroguo-ghy
+  pronouns: he/him
+  org: Tencent
+  role: Committer
 - name: Hongze Zhang
   apacheId: hongze
   githubId: zhztheplayer
@@ -122,15 +145,15 @@
   githubId: stoty
   org: Cloudera
   role: Committer
-- name: James R. Taylor
-  apacheId: jamestaylor
-  githubId: JamesRTaylor
-  org: Salesforce
-  role: PMC
 - name: Jacques Nadeau
   apacheId: jacques
   githubId: jacques-n
   org: Dremio
+  role: PMC
+- name: James R. Taylor
+  apacheId: jamestaylor
+  githubId: JamesRTaylor
+  org: Salesforce
   role: PMC
 - name: Jess Balint
   apacheId: jbalint
@@ -147,6 +170,11 @@
   githubId: jiajunbernoulli
   org: ByteDance
   role: Committer
+- name: Jin Xing
+  apacheId: jinxing
+  githubId: jinxing64
+  org: Ant Financial
+  role: Committer
 - name: Jinfeng Ni
   apacheId: jni
   githubId: jinfengni
@@ -156,11 +184,6 @@
   apacheId: jingzhang
   githubId: beyond1920
   org: Kuaishou
-  role: Committer
-- name: Jin Xing
-  apacheId: jinxing
-  githubId: jinxing64
-  org: Ant Financial
   role: Committer
 - name: John Pullokkaran
   apacheId: jpullokk
@@ -199,6 +222,12 @@
   githubId: laurentgo
   org: Dremio
   role: PMC
+- name: Lei Shen
+  apacheId: lakeshen
+  githubId: LakeShen
+  pronouns: he/him
+  org:
+  role: Committer
 - name: Liya Fan
   apacheId: liyafan
   githubId: liyafan82
@@ -216,6 +245,11 @@
   org: Rochester Institute of Technology
   role: PMC
   homepage: https://michael.mior.ca/
+- name: Mihai Budiu
+  apacheId: mbudiu
+  githubId: mihaibudiu
+  org: Feldera.com
+  role: PMC
 - name: Milinda Pathirage
   apacheId: milinda
   githubId: milinda
@@ -243,15 +277,32 @@
   githubId: nishantmonu51
   org: Hortonworks
   role: Committer
+- name: Oliver Lee
+  apacheId: oliver
+  githubId: olivrlee
+  org: Google
+  role: Committer
+- name: Ran Tao
+  apacheId: taoran
+  githubId: chucheng92
+  pronouns: he/him
+  org: ByteDance
+  role: Committer
 - name: Ruben Quesada Lopez
   apacheId: rubenql
   githubId: rubenada
-  org: TIBCO
-  role: PMC
+  org: Voltron Data
+  role: PMC Chair
 - name: Rui Wang
   apacheId: amaliujia
   githubId: amaliujia
   org: Google
+  role: Committer
+- name: Runkang He
+  apacheId: herunkang
+  githubId: herunkang2018
+  pronouns: he/him
+  org: ByteDance
   role: Committer
 - name: Sergey Nuyanzin
   apacheId: snuyanzin
@@ -273,7 +324,7 @@
   githubId: zabetak
   pronouns: he/him
   org: Cloudera
-  role: PMC Chair
+  role: PMC
   homepage: https://people.apache.org/~zabetak/
 - name: Steven Noels
   apacheId: stevenn
@@ -291,20 +342,26 @@
   githubId: tdunning
   org: MapR
   role: PMC
+- name: TJ Banghart
+  apacheId: tjbanghart
+  githubId: tjbanghart
+  pronouns: he/him
+  org: Google
+  role: Committer
 - name: Vineet Garg
   apacheId: vgarg
   githubId: vineetgarg02
   org: Cloudera
   role: Committer
-- name: Vladimir Sitnikov
-  apacheId: vladimirsitnikov
-  githubId: vlsi
-  org: NetCracker
-  role: PMC
 - name: Vladimir Ozerov
   apacheId: vozerov
   githubId: devozerov
   org: Querify Labs
+  role: PMC
+- name: Vladimir Sitnikov
+  apacheId: vladimirsitnikov
+  githubId: vlsi
+  org: NetCracker
   role: PMC
 - name: Volodymyr Vysotskyi
   apacheId: volodymyr
@@ -321,11 +378,28 @@
   githubId: NobiGo
   pronouns: he/him
   org: Hikvision
+  role: PMC
+- name: Yong Liu
+  apacheId: jackylau
+  githubId: liuyongvs
+  pronouns: he/him
+  org: Ant Financial
   role: Committer
 - name: Zhaohui Xu
   apacheId: zhaohui
   githubId: xy2953396112
   org: Ant Financial
+  role: Committer
+- name: Zhe Hu
+  apacheId: zhehu
+  githubId: ILuffZhe
+  pronouns: he/him
+  org: Hikvision
+  role: Committer
+- name: Zhen Chen
+  apacheId: zhenchen
+  githubId: xiedeyantu
+  org:
   role: Committer
 - name: Zhen Wang
   apacheId: zhenw

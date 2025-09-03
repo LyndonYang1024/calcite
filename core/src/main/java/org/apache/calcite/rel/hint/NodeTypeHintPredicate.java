@@ -26,9 +26,12 @@ import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.SetOp;
 import org.apache.calcite.rel.core.Snapshot;
 import org.apache.calcite.rel.core.Sort;
+import org.apache.calcite.rel.core.TableFunctionScan;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.core.Values;
 import org.apache.calcite.rel.core.Window;
+
+import static java.util.Objects.requireNonNull;
 
 /**
  * A hint predicate that specifies which kind of relational
@@ -105,21 +108,26 @@ public class NodeTypeHintPredicate implements HintPredicate {
     /**
      * The hint would be propagated to the Snapshot nodes.
      */
-    SNAPSHOT(Snapshot.class);
+    SNAPSHOT(Snapshot.class),
+
+    /**
+     * The hint would be propagated to the TableFunctionScan nodes.
+     */
+    TABLE_FUNCTION_SCAN(TableFunctionScan.class);
 
     /** Relational expression clazz that the hint can apply to. */
     @SuppressWarnings("ImmutableEnumChecker")
-    private Class<?> relClazz;
+    private final Class<?> relClazz;
 
     NodeType(Class<?> relClazz) {
       this.relClazz = relClazz;
     }
   }
 
-  private NodeType nodeType;
+  private final NodeType nodeType;
 
   public NodeTypeHintPredicate(NodeType nodeType) {
-    this.nodeType = nodeType;
+    this.nodeType = requireNonNull(nodeType, "nodeType");
   }
 
   @Override public boolean apply(RelHint hint, RelNode rel) {

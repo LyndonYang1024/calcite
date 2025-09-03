@@ -33,10 +33,11 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collector;
+
+import static java.util.Objects.requireNonNull;
 
 /**
  * A <code>SqlNode</code> is a SQL parse tree.
@@ -62,7 +63,7 @@ public abstract class SqlNode implements Cloneable {
    * @param pos Parser position, must not be null.
    */
   SqlNode(SqlParserPos pos) {
-    this.pos = Objects.requireNonNull(pos, "pos");
+    this.pos = requireNonNull(pos, "pos");
   }
 
   //~ Methods ----------------------------------------------------------------
@@ -337,7 +338,7 @@ public abstract class SqlNode implements Cloneable {
    *
    * @param scope Scope
    */
-  public SqlMonotonicity getMonotonicity(@Nullable SqlValidatorScope scope) {
+  public SqlMonotonicity getMonotonicity(SqlValidatorScope scope) {
     return SqlMonotonicity.NOT_MONOTONIC;
   }
 

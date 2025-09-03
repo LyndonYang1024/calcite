@@ -30,7 +30,6 @@ import org.apache.calcite.rel.externalize.RelWriterImpl;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.sql.SqlExplainLevel;
-import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Pair;
@@ -250,7 +249,7 @@ public class RexProgram {
     final List<RexNode> projectRexNodes =
         requireNonNull(input.getExpressionList("projects"), "projects");
     final List<RexLocalRef> projects = new ArrayList<>(projectRexNodes.size());
-    for (RexNode rexNode: projectRexNodes) {
+    for (RexNode rexNode : projectRexNodes) {
       projects.add((RexLocalRef) rexNode);
     }
     final RelDataType inputType = input.getRowType("inputRowType");
@@ -723,12 +722,6 @@ public class RexProgram {
     int index = project.index;
     while (true) {
       RexNode expr = exprs.get(index);
-      if (expr instanceof RexCall
-          && ((RexCall) expr).getOperator()
-          == SqlStdOperatorTable.IN_FENNEL) {
-        // drill through identity function
-        expr = ((RexCall) expr).getOperands().get(0);
-      }
       if (expr instanceof RexLocalRef) {
         index = ((RexLocalRef) expr).index;
       } else if (expr instanceof RexInputRef) {
@@ -998,7 +991,8 @@ public class RexProgram {
           fieldAccess.getReferenceExpr().accept(this);
       return new RexFieldAccess(
           requireNonNull(referenceExpr, "referenceExpr must not be null"),
-          fieldAccess.getField());
+          fieldAccess.getField(),
+          fieldAccess.getType());
     }
   }
 

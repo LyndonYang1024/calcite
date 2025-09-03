@@ -57,6 +57,11 @@ public enum SqlTypeName {
   SMALLINT(PrecScale.NO_NO, false, Types.SMALLINT, SqlTypeFamily.NUMERIC),
   INTEGER(PrecScale.NO_NO, false, Types.INTEGER, SqlTypeFamily.NUMERIC),
   BIGINT(PrecScale.NO_NO, false, Types.BIGINT, SqlTypeFamily.NUMERIC),
+  // Unsigned types use the next-higher Java type
+  UTINYINT(PrecScale.NO_NO, false, Types.SMALLINT, SqlTypeFamily.NUMERIC),
+  USMALLINT(PrecScale.NO_NO, false, Types.INTEGER, SqlTypeFamily.NUMERIC),
+  UINTEGER(PrecScale.NO_NO, false, Types.BIGINT, SqlTypeFamily.NUMERIC),
+  UBIGINT(PrecScale.NO_NO, false, Types.DECIMAL, SqlTypeFamily.NUMERIC),
   DECIMAL(PrecScale.NO_NO | PrecScale.YES_NO | PrecScale.YES_YES, false,
       Types.DECIMAL, SqlTypeFamily.NUMERIC),
   FLOAT(PrecScale.NO_NO, false, Types.FLOAT, SqlTypeFamily.NUMERIC),
@@ -65,11 +70,15 @@ public enum SqlTypeName {
   DATE(PrecScale.NO_NO, false, Types.DATE, SqlTypeFamily.DATE),
   TIME(PrecScale.NO_NO | PrecScale.YES_NO, false, Types.TIME,
       SqlTypeFamily.TIME),
-  TIME_WITH_LOCAL_TIME_ZONE(PrecScale.NO_NO | PrecScale.YES_NO, false, Types.OTHER,
+  TIME_WITH_LOCAL_TIME_ZONE(PrecScale.NO_NO | PrecScale.YES_NO, false, Types.TIME,
+      SqlTypeFamily.TIME),
+  TIME_TZ(PrecScale.NO_NO | PrecScale.YES_NO, false, Types.TIME,
       SqlTypeFamily.TIME),
   TIMESTAMP(PrecScale.NO_NO | PrecScale.YES_NO, false, Types.TIMESTAMP,
       SqlTypeFamily.TIMESTAMP),
   TIMESTAMP_WITH_LOCAL_TIME_ZONE(PrecScale.NO_NO | PrecScale.YES_NO, false,
+      Types.TIMESTAMP, SqlTypeFamily.TIMESTAMP),
+  TIMESTAMP_TZ(PrecScale.NO_NO | PrecScale.YES_NO, false,
       Types.TIMESTAMP, SqlTypeFamily.TIMESTAMP),
   INTERVAL_YEAR(PrecScale.NO_NO, false, Types.OTHER,
       SqlTypeFamily.INTERVAL_YEAR_MONTH),
@@ -127,7 +136,12 @@ public enum SqlTypeName {
    * do not flag it 'special' (internal). */
   GEOMETRY(PrecScale.NO_NO, false, ExtraSqlTypes.GEOMETRY, SqlTypeFamily.GEO),
   MEASURE(PrecScale.NO_NO, true, Types.OTHER, SqlTypeFamily.ANY),
-  SARG(PrecScale.NO_NO, true, Types.OTHER, SqlTypeFamily.ANY);
+  FUNCTION(PrecScale.NO_NO, true, Types.OTHER, SqlTypeFamily.FUNCTION),
+  SARG(PrecScale.NO_NO, true, Types.OTHER, SqlTypeFamily.ANY),
+  UUID(PrecScale.NO_NO, false, Types.OTHER, SqlTypeFamily.UUID),
+  /** VARIANT data type, a dynamically-typed value that can have at runtime
+   * any of the other data types in this table. */
+  VARIANT(PrecScale.NO_NO, false, Types.OTHER, SqlTypeFamily.VARIANT);
 
   public static final int MAX_DATETIME_PRECISION = 3;
 
@@ -137,7 +151,7 @@ public enum SqlTypeName {
   public static final int DEFAULT_INTERVAL_START_PRECISION = 2;
   public static final int DEFAULT_INTERVAL_FRACTIONAL_SECOND_PRECISION = 6;
   public static final int MIN_INTERVAL_START_PRECISION = 1;
-  public static final int MIN_INTERVAL_FRACTIONAL_SECOND_PRECISION = 1;
+  public static final int MIN_INTERVAL_FRACTIONAL_SECOND_PRECISION = 0;
   public static final int MAX_INTERVAL_START_PRECISION = 10;
   public static final int MAX_INTERVAL_FRACTIONAL_SECOND_PRECISION = 9;
 
@@ -158,8 +172,10 @@ public enum SqlTypeName {
           INTERVAL_DAY, INTERVAL_DAY_HOUR, INTERVAL_DAY_MINUTE,
           INTERVAL_DAY_SECOND, INTERVAL_HOUR, INTERVAL_HOUR_MINUTE,
           INTERVAL_HOUR_SECOND, INTERVAL_MINUTE, INTERVAL_MINUTE_SECOND,
-          INTERVAL_SECOND, TIME_WITH_LOCAL_TIME_ZONE, TIMESTAMP_WITH_LOCAL_TIME_ZONE,
-          FLOAT, MULTISET, DISTINCT, STRUCTURED, ROW, CURSOR, COLUMN_LIST);
+          INTERVAL_SECOND, TIME_WITH_LOCAL_TIME_ZONE, TIME_TZ,
+          TIMESTAMP_WITH_LOCAL_TIME_ZONE, TIMESTAMP_TZ,
+          FLOAT, MULTISET, DISTINCT, STRUCTURED, ROW, CURSOR, COLUMN_LIST, UUID, VARIANT,
+          UTINYINT, USMALLINT, UINTEGER, UBIGINT);
 
   public static final List<SqlTypeName> BOOLEAN_TYPES =
       ImmutableList.of(BOOLEAN);
@@ -170,8 +186,11 @@ public enum SqlTypeName {
   public static final List<SqlTypeName> INT_TYPES =
       ImmutableList.of(TINYINT, SMALLINT, INTEGER, BIGINT);
 
+  public static final List<SqlTypeName> UNSIGNED_TYPES =
+      ImmutableList.of(UTINYINT, USMALLINT, UINTEGER, UBIGINT);
+
   public static final List<SqlTypeName> EXACT_TYPES =
-      combine(INT_TYPES, ImmutableList.of(DECIMAL));
+      combine(combine(INT_TYPES, UNSIGNED_TYPES), ImmutableList.of(DECIMAL));
 
   public static final List<SqlTypeName> APPROX_TYPES =
       ImmutableList.of(FLOAT, REAL, DOUBLE);
@@ -192,8 +211,13 @@ public enum SqlTypeName {
       ImmutableList.of(GEOMETRY);
 
   public static final List<SqlTypeName> DATETIME_TYPES =
-      ImmutableList.of(DATE, TIME, TIME_WITH_LOCAL_TIME_ZONE,
-          TIMESTAMP, TIMESTAMP_WITH_LOCAL_TIME_ZONE);
+      ImmutableList.of(DATE, TIME, TIME_WITH_LOCAL_TIME_ZONE, TIME_TZ,
+          TIMESTAMP, TIMESTAMP_WITH_LOCAL_TIME_ZONE, TIMESTAMP_TZ);
+
+  /** Types that contain time zone information. */
+  public static final List<SqlTypeName> TZ_TYPES =
+      ImmutableList.of(TIME_WITH_LOCAL_TIME_ZONE, TIME_TZ,
+          TIMESTAMP_WITH_LOCAL_TIME_ZONE, TIMESTAMP_TZ);
 
   public static final Set<SqlTypeName> YEAR_INTERVAL_TYPES =
       Sets.immutableEnumSet(SqlTypeName.INTERVAL_YEAR,
@@ -271,7 +295,7 @@ public enum SqlTypeName {
   private final int signatures;
 
   /**
-   * Returns true if not of a "pure" standard sql type. "Inpure" types are
+   * Returns true if not of a "pure" standard sql type. "Inpure" types include
    * {@link #ANY}, {@link #NULL} and {@link #SYMBOL}
    */
   private final boolean special;
@@ -292,15 +316,6 @@ public enum SqlTypeName {
    * @return Type name, or null if not found
    */
   public static @Nullable SqlTypeName get(String name) {
-    if (false) {
-      // The following code works OK, but the spurious exceptions are
-      // annoying.
-      try {
-        return SqlTypeName.valueOf(name);
-      } catch (IllegalArgumentException e) {
-        return null;
-      }
-    }
     return VALUES_MAP.get(name);
   }
 
@@ -308,7 +323,12 @@ public enum SqlTypeName {
    * matches the given name, or throws {@link IllegalArgumentException}; never
    * returns null. */
   public static SqlTypeName lookup(String tag) {
-    String tag2 = tag.replace(' ', '_');
+    // Special handling for TIME WITH TIME ZONE and
+    // TIMESTAMP WITH TIME ZONE, whose type names are TIME_TZ and TIMESTAMP_TZ.
+    // We know that the type name is always uppercase, because it is
+    // inserted in the tag by the parser.
+    final String tag1 = tag.replace("WITH TIME ZONE", "TZ");
+    final String tag2 = tag1.replace(' ', '_');
     return valueOf(tag2);
   }
 
@@ -338,7 +358,7 @@ public enum SqlTypeName {
    * true</code>, because the VARCHAR type allows a precision parameter, as in
    * <code>VARCHAR(10)</code>.</li>
    * <li><code>Varchar.allowsPrecScale(true, true)</code> returns <code>
-   * true</code>, because the VARCHAR type does not allow a precision and a
+   * false</code>, because the VARCHAR type does not allow a precision and a
    * scale parameter, as in <code>VARCHAR(10, 4)</code>.</li>
    * <li><code>allowsPrecScale(false, true)</code> returns <code>false</code>
    * for every type.</li>
@@ -378,7 +398,13 @@ public enum SqlTypeName {
   }
 
   /** Returns the default scale for this type if supported, otherwise -1 if
-   * scale is either unsupported or must be specified explicitly. */
+   * scale is either unsupported or must be specified explicitly.
+   *
+   * @deprecated
+   * Use {@link org.apache.calcite.rel.type.RelDataTypeSystem#getDefaultScale(SqlTypeName)}
+   * but return Integer.MIN_VALUE if scale is unsupported.
+   */
+  @Deprecated
   public int getDefaultScale() {
     switch (this) {
     case DECIMAL:
@@ -535,6 +561,18 @@ public enum SqlTypeName {
     case BIGINT:
       return getNumericLimit(2, 64, sign, limit, beyond);
 
+    case UTINYINT:
+      return getUnsignedLimit(8, sign, limit, beyond);
+
+    case USMALLINT:
+      return getUnsignedLimit(16, sign, limit, beyond);
+
+    case UINTEGER:
+      return getUnsignedLimit(32, sign, limit, beyond);
+
+    case UBIGINT:
+      return getUnsignedLimit(64, sign, limit, beyond);
+
     case DECIMAL:
       BigDecimal decimal =
           getNumericLimit(10, precision, sign, limit, beyond);
@@ -542,8 +580,6 @@ public enum SqlTypeName {
         return null;
       }
 
-      // Decimal values must fit into 64 bits. So, the maximum value of
-      // a DECIMAL(19, 0) is 2^63 - 1, not 10^19 - 1.
       switch (limit) {
       case OVERFLOW:
         final BigDecimal other =
@@ -765,7 +801,11 @@ public enum SqlTypeName {
    * precision/length are not applicable for this type.
    *
    * @return Minimum allowed precision
+   *
+   * @deprecated
+   * Use {@link org.apache.calcite.rel.type.RelDataTypeSystem#getMinPrecision(SqlTypeName)}.
    */
+  @Deprecated
   public int getMinPrecision() {
     switch (this) {
     case DECIMAL:
@@ -775,8 +815,10 @@ public enum SqlTypeName {
     case BINARY:
     case TIME:
     case TIME_WITH_LOCAL_TIME_ZONE:
+    case TIME_TZ:
     case TIMESTAMP:
     case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+    case TIMESTAMP_TZ:
       return 1;
     case INTERVAL_YEAR:
     case INTERVAL_YEAR_MONTH:
@@ -799,11 +841,16 @@ public enum SqlTypeName {
 
   /**
    * Returns the minimum scale (or fractional second precision in the case of
-   * intervals) allowed for this type, or -1 if precision/length are not
+   * intervals) allowed for this type, or -1 if scale are not
    * applicable for this type.
    *
    * @return Minimum allowed scale
+   *
+   * @deprecated
+   * Use {@link org.apache.calcite.rel.type.RelDataTypeSystem#getMinScale(SqlTypeName)}
+   * but return Integer.MIN_VALUE if scale is unsupported.
    */
+  @Deprecated
   public int getMinScale() {
     switch (this) {
     // TODO: Minimum numeric scale for decimal
@@ -934,6 +981,31 @@ public enum SqlTypeName {
     }
   }
 
+  private static @Nullable BigDecimal getUnsignedLimit(
+      int exponent,
+      boolean sign,
+      Limit limit,
+      boolean beyond) {
+    final int radix = 2;
+    switch (limit) {
+    case OVERFLOW:
+      // 2-based schemes run from 0 to 2^N-1 e.g. 0 to 255
+      if (!sign) {
+        return BigDecimal.ZERO;
+      }
+      final BigDecimal bigRadix = BigDecimal.valueOf(radix);
+      BigDecimal decimal = bigRadix.pow(exponent);
+      return decimal.subtract(BigDecimal.ONE);
+    case UNDERFLOW:
+      return beyond ? null
+          : (sign ? BigDecimal.ZERO : BigDecimal.ONE.negate());
+    case ZERO:
+      return BigDecimal.ZERO;
+    default:
+      throw Util.unexpected(limit);
+    }
+  }
+
   public SqlLiteral createLiteral(Object o, SqlParserPos pos) {
     switch (this) {
     case BOOLEAN:
@@ -962,6 +1034,11 @@ public enum SqlTypeName {
       return SqlLiteral.createTimestamp(this, o instanceof Calendar
           ? TimestampString.fromCalendarFields((Calendar) o)
           : (TimestampString) o, 0 /* todo */, pos);
+    case UTINYINT:
+    case USMALLINT:
+    case UINTEGER:
+    case UBIGINT:
+      // no literals for unsigned values yet
     default:
       throw Util.unexpected(this);
     }

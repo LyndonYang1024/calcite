@@ -25,6 +25,7 @@ import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.DateRangeRules;
 import org.apache.calcite.rel.rules.JoinPushThroughJoinRule;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
+import org.apache.calcite.rel.rules.SingleValuesOptimizationRules;
 import org.apache.calcite.rel.rules.materialize.MaterializedViewRules;
 
 import com.google.common.collect.ImmutableList;
@@ -87,7 +88,10 @@ public class RelOptRules {
           CoreRules.SORT_REMOVE_CONSTANT_KEYS,
           CoreRules.SORT_UNION_TRANSPOSE,
           CoreRules.EXCHANGE_REMOVE_CONSTANT_KEYS,
-          CoreRules.SORT_EXCHANGE_REMOVE_CONSTANT_KEYS);
+          CoreRules.SORT_EXCHANGE_REMOVE_CONSTANT_KEYS,
+          CoreRules.SAMPLE_TO_FILTER,
+          CoreRules.FILTER_SAMPLE_TRANSPOSE,
+          CoreRules.FILTER_WINDOW_TRANSPOSE);
 
   static final List<RelOptRule> ABSTRACT_RULES =
       ImmutableList.of(CoreRules.AGGREGATE_ANY_PULL_UP_CONSTANTS,
@@ -103,13 +107,19 @@ public class RelOptRules {
           PruneEmptyRules.JOIN_RIGHT_INSTANCE,
           PruneEmptyRules.SORT_FETCH_ZERO_INSTANCE,
           PruneEmptyRules.EMPTY_TABLE_INSTANCE,
+          SingleValuesOptimizationRules.JOIN_LEFT_INSTANCE,
+          SingleValuesOptimizationRules.JOIN_RIGHT_INSTANCE,
+          SingleValuesOptimizationRules.JOIN_LEFT_PROJECT_INSTANCE,
+          SingleValuesOptimizationRules.JOIN_RIGHT_PROJECT_INSTANCE,
           CoreRules.UNION_MERGE,
           CoreRules.INTERSECT_MERGE,
           CoreRules.MINUS_MERGE,
+          CoreRules.PROJECT_OVER_SUM_TO_SUM0_RULE,
           CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW,
           CoreRules.FILTER_MERGE,
           DateRangeRules.FILTER_INSTANCE,
-          CoreRules.INTERSECT_TO_DISTINCT);
+          CoreRules.INTERSECT_TO_DISTINCT,
+          CoreRules.MINUS_TO_DISTINCT);
 
   static final List<RelOptRule> ABSTRACT_RELATIONAL_RULES =
       ImmutableList.of(CoreRules.FILTER_INTO_JOIN,
@@ -121,6 +131,7 @@ public class RelOptRules {
           CoreRules.JOIN_TO_SEMI_JOIN,
           CoreRules.AGGREGATE_REMOVE,
           CoreRules.UNION_TO_DISTINCT,
+          CoreRules.UNION_TO_VALUES,
           CoreRules.PROJECT_REMOVE,
           CoreRules.PROJECT_AGGREGATE_MERGE,
           CoreRules.AGGREGATE_JOIN_TRANSPOSE,

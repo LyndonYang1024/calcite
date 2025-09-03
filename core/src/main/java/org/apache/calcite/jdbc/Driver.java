@@ -26,6 +26,7 @@ import org.apache.calcite.avatica.Handler;
 import org.apache.calcite.avatica.HandlerImpl;
 import org.apache.calcite.avatica.Meta;
 import org.apache.calcite.avatica.UnregisteredDriver;
+import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.config.CalciteConnectionProperty;
 import org.apache.calcite.linq4j.function.Function0;
 import org.apache.calcite.model.JsonSchema;
@@ -68,7 +69,7 @@ public class Driver extends UnregisteredDriver {
 
   /** Creates a Driver with a factory for {@code CalcitePrepare} objects;
    * if the factory is null, the driver will call
-   * {@link #createPrepareFactory()}. */
+   * {@link CalcitePrepare#DEFAULT_FACTORY}. */
   protected Driver(@Nullable Supplier<CalcitePrepare> prepareFactory) {
     this.prepareFactory = prepareFactory;
   }
@@ -100,13 +101,12 @@ public class Driver extends UnregisteredDriver {
     if (prepareFactory != null) {
       return prepareFactory.get();
     }
-    return createPrepareFactory().apply();
+    return CalcitePrepare.DEFAULT_FACTORY.apply();
   }
 
   /** Returns a factory with which to create a {@link CalcitePrepare}.
    *
-   * <p>Now deprecated; if you wish to use a custom prepare, overrides of this
-   * method will still work, but we prefer that you call
+   * <p>Now deprecated; if you wish to use a custom prepare, please call
    * {@link #withPrepareFactory(Supplier)}
    * or override {@link #createPrepare()}. */
   @Deprecated // to be removed before 2.0
@@ -144,7 +144,11 @@ public class Driver extends UnregisteredDriver {
         final String model = model(connection);
         if (model != null) {
           try {
-            new ModelHandler(connection, model);
+            ModelHandler h = new ModelHandler(connection.getRootSchema(), model);
+            String defaultName = h.defaultSchemaName();
+            if (defaultName != null) {
+              connection.setSchema(defaultName);
+            }
           } catch (IOException e) {
             throw new SQLException(e);
           }
@@ -211,7 +215,16 @@ public class Driver extends UnregisteredDriver {
   }
 
   @Override public Meta createMeta(AvaticaConnection connection) {
-    return new CalciteMetaImpl((CalciteConnectionImpl) connection);
+    final CalciteConnectionConfig config =
+        (CalciteConnectionConfig) connection.config();
+    CalciteMetaTableFactory metaTableFactory =
+        config.metaTableFactory(CalciteMetaTableFactory.class,
+            CalciteMetaTableFactoryImpl.INSTANCE);
+    CalciteMetaColumnFactory metaColumnFactory =
+        config.metaColumnFactory(CalciteMetaColumnFactory.class,
+            CalciteMetaColumnFactoryImpl.INSTANCE);
+    return CalciteMetaImpl.create((CalciteConnectionImpl) connection,
+        metaTableFactory, metaColumnFactory);
   }
 
   /** Creates an internal connection. */

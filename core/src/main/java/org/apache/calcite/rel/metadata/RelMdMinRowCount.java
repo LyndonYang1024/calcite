@@ -27,6 +27,7 @@ import org.apache.calcite.rel.core.Intersect;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.Minus;
 import org.apache.calcite.rel.core.Project;
+import org.apache.calcite.rel.core.Sample;
 import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.core.TableModify;
 import org.apache.calcite.rel.core.TableScan;
@@ -103,17 +104,21 @@ public class RelMdMinRowCount
     return mq.getMinRowCount(rel.getInput());
   }
 
+  public @Nullable Double getMinRowCount(Sample rel, RelMetadataQuery mq) {
+    return mq.getMinRowCount(rel.getInput());
+  }
+
   public Double getMinRowCount(Sort rel, RelMetadataQuery mq) {
     Double rowCount = mq.getMinRowCount(rel.getInput());
     if (rowCount == null) {
       rowCount = 0D;
     }
 
-    final int offset = rel.offset instanceof RexLiteral ? RexLiteral.intValue(rel.offset) : 0;
+    final long offset = rel.offset instanceof RexLiteral ? RexLiteral.longValue(rel.offset) : 0;
     rowCount = Math.max(rowCount - offset, 0D);
 
     final double limit =
-        rel.fetch instanceof RexLiteral ? RexLiteral.intValue(rel.fetch) : rowCount;
+        rel.fetch instanceof RexLiteral ? RexLiteral.longValue(rel.fetch) : rowCount;
     return limit < rowCount ? limit : rowCount;
   }
 
@@ -123,11 +128,11 @@ public class RelMdMinRowCount
       rowCount = 0D;
     }
 
-    final int offset = rel.offset instanceof RexLiteral ? RexLiteral.intValue(rel.offset) : 0;
+    final long offset = rel.offset instanceof RexLiteral ? RexLiteral.longValue(rel.offset) : 0;
     rowCount = Math.max(rowCount - offset, 0D);
 
     final double limit =
-        rel.fetch instanceof RexLiteral ? RexLiteral.intValue(rel.fetch) : rowCount;
+        rel.fetch instanceof RexLiteral ? RexLiteral.longValue(rel.fetch) : rowCount;
     return limit < rowCount ? limit : rowCount;
   }
 
@@ -169,7 +174,7 @@ public class RelMdMinRowCount
       if (node instanceof Sort) {
         Sort sort = (Sort) node;
         if (sort.fetch instanceof RexLiteral) {
-          return (double) RexLiteral.intValue(sort.fetch);
+          return (double) RexLiteral.longValue(sort.fetch);
         }
       }
     }

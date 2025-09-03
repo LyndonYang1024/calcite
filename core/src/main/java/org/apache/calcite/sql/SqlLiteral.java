@@ -37,7 +37,9 @@ import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.NlsString;
 import org.apache.calcite.util.TimeString;
+import org.apache.calcite.util.TimeWithTimeZoneString;
 import org.apache.calcite.util.TimestampString;
+import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.apache.calcite.util.Util;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -47,10 +49,14 @@ import java.nio.charset.Charset;
 import java.nio.charset.UnsupportedCharsetException;
 import java.util.Calendar;
 import java.util.Objects;
+import java.util.UUID;
+
+import static com.google.common.base.Preconditions.checkArgument;
 
 import static org.apache.calcite.linq4j.Nullness.castNonNull;
 import static org.apache.calcite.util.Static.RESOURCE;
 
+import static java.lang.Integer.parseInt;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -175,9 +181,8 @@ public class SqlLiteral extends SqlNode {
       SqlParserPos pos) {
     super(pos);
     this.value = value;
-    this.typeName = typeName;
-    assert typeName != null;
-    assert valueMatchesType(value, typeName);
+    this.typeName = requireNonNull(typeName, "typeName");
+    checkArgument(valueMatchesType(value, typeName));
   }
 
   //~ Methods ----------------------------------------------------------------
@@ -199,14 +204,21 @@ public class SqlLiteral extends SqlNode {
       return value == null;
     case DECIMAL:
     case DOUBLE:
+    case FLOAT:
+    case REAL:
       return value instanceof BigDecimal;
     case DATE:
       return value instanceof DateString;
     case TIME:
+    case TIME_WITH_LOCAL_TIME_ZONE:
       return value instanceof TimeString;
+    case TIME_TZ:
+      return value instanceof TimeWithTimeZoneString;
     case TIMESTAMP:
     case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
       return value instanceof TimestampString;
+    case TIMESTAMP_TZ:
+      return value instanceof TimestampWithTimeZoneString;
     case INTERVAL_YEAR:
     case INTERVAL_YEAR_MONTH:
     case INTERVAL_MONTH:
@@ -225,6 +237,8 @@ public class SqlLiteral extends SqlNode {
       return value instanceof BitString;
     case CHAR:
       return value instanceof NlsString;
+    case UUID:
+      return value instanceof UUID;
     case SYMBOL:
       return (value instanceof Enum)
           || (value instanceof SqlSampleSpec);
@@ -252,7 +266,7 @@ public class SqlLiteral extends SqlNode {
    * Returns the value of this literal.
    *
    * <p>Try not to use this method! There are so many different kinds of
-   * values, it's better to to let SqlLiteral do whatever it is you want to
+   * values, it's better to let SqlLiteral do whatever it is you want to
    * do.
    *
    * @see #booleanValue()
@@ -593,7 +607,7 @@ public class SqlLiteral extends SqlNode {
     return litmus.succeed();
   }
 
-  @Override public SqlMonotonicity getMonotonicity(@Nullable SqlValidatorScope scope) {
+  @Override public SqlMonotonicity getMonotonicity(SqlValidatorScope scope) {
     return SqlMonotonicity.CONSTANT;
   }
 
@@ -745,8 +759,7 @@ public class SqlLiteral extends SqlNode {
       int rightPrec) {
     switch (typeName) {
     case BOOLEAN:
-      writer.keyword(
-          value == null ? "UNKNOWN" : (Boolean) value ? "TRUE" : "FALSE");
+      writer.getDialect().unparseBoolLiteral(writer, this, leftPrec, rightPrec);
       break;
     case NULL:
       writer.keyword("NULL");
@@ -771,6 +784,7 @@ public class SqlLiteral extends SqlNode {
     switch (typeName) {
     case NULL:
     case BOOLEAN:
+    case UUID:
       RelDataType ret = typeFactory.createSqlType(typeName);
       ret = typeFactory.createTypeWithNullability(ret, null == value);
       return ret;
@@ -826,7 +840,7 @@ public class SqlLiteral extends SqlNode {
     case VARBINARY: // should never happen
 
     default:
-      throw Util.needToImplement(toString() + ", operand=" + value);
+      throw Util.needToImplement(this + ", operand=" + value);
     }
   }
 
@@ -891,6 +905,14 @@ public class SqlLiteral extends SqlNode {
     return new SqlTimestampLiteral(ts, precision, typeName, pos);
   }
 
+  /** Creates a TIMESTAMP WITH TIME ZONE literal. */
+  public static SqlTimestampTzLiteral createTimestamp(
+      TimestampWithTimeZoneString ts,
+      int precision,
+      SqlParserPos pos) {
+    return new SqlTimestampTzLiteral(ts, precision, pos);
+  }
+
   @Deprecated // to be removed before 2.0
   public static SqlTimeLiteral createTime(
       Calendar calendar,
@@ -904,6 +926,19 @@ public class SqlLiteral extends SqlNode {
       int precision,
       SqlParserPos pos) {
     return new SqlTimeLiteral(t, precision, false, pos);
+  }
+
+  public static SqlTimeTzLiteral createTime(
+      TimeWithTimeZoneString t,
+      int precision,
+      SqlParserPos pos) {
+    return new SqlTimeTzLiteral(t, precision, pos);
+  }
+
+  public static SqlUuidLiteral createUuid(
+      UUID u,
+      SqlParserPos pos) {
+    return new SqlUuidLiteral(u, pos);
   }
 
   /**
@@ -940,6 +975,7 @@ public class SqlLiteral extends SqlNode {
     int prec;
     int scale;
 
+    // We expect that s is already trimmed
     int i = s.indexOf('.');
     if ((i >= 0) && ((s.length() - 1) != i)) {
       value = SqlParserUtil.parseDecimal(s);
@@ -954,6 +990,10 @@ public class SqlLiteral extends SqlNode {
       value = SqlParserUtil.parseInteger(s);
       scale = 0;
       prec = s.length();
+    }
+    if (value.compareTo(BigDecimal.ZERO) < 0) {
+      // The '-' sign should not be counted
+      prec--;
     }
     return new SqlNumericLiteral(
         value,
@@ -1074,7 +1114,7 @@ public class SqlLiteral extends SqlNode {
         final String u = s.substring(i + 1, i + 5);
         final int v;
         try {
-          v = Integer.parseInt(u, 16);
+          v = parseInt(u, 16);
         } catch (NumberFormatException ex) {
           throw SqlUtil.newContextException(getParserPosition(),
               RESOURCE.unicodeEscapeMalformed(i));

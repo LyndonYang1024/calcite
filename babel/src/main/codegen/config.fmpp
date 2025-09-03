@@ -30,24 +30,28 @@ data: {
       "org.apache.calcite.sql.SqlCreate",
       "org.apache.calcite.sql.babel.SqlBabelCreateTable",
       "org.apache.calcite.sql.babel.TableCollectionType",
-      "org.apache.calcite.sql.babel.postgresql.AndChain",
-      "org.apache.calcite.sql.babel.postgresql.SqlBegin",
-      "org.apache.calcite.sql.babel.postgresql.SqlCommit",
-      "org.apache.calcite.sql.babel.postgresql.SqlDiscard",
-      "org.apache.calcite.sql.babel.postgresql.SqlRollback",
-      "org.apache.calcite.sql.babel.postgresql.SqlShow",
+      "org.apache.calcite.sql.babel.postgres.TransactionMode",
+      "org.apache.calcite.sql.babel.postgres.TransactionChainingMode",
+      "org.apache.calcite.sql.babel.postgres.SqlBegin",
+      "org.apache.calcite.sql.babel.postgres.SqlCommit",
+      "org.apache.calcite.sql.babel.postgres.SqlDiscard",
+      "org.apache.calcite.sql.babel.postgres.SqlRollback",
+      "org.apache.calcite.sql.babel.postgres.SqlShow",
+      "org.apache.calcite.sql.babel.postgres.SqlSetOptions",
       "org.apache.calcite.sql.ddl.SqlDdlNodes",
     ]
 
     # List of new keywords. Example: "DATABASES", "TABLES". If the keyword is
     # not a reserved keyword, add it to the 'nonReservedKeywords' section.
     keywords: [
+      "ANTI"
       "DISCARD"
       "IF"
       "PLANS"
       "SEED"
       "SEMI"
       "SEQUENCES"
+      "SNAPSHOT"
       "TEMP"
       "VOLATILE"
     ]
@@ -56,6 +60,7 @@ data: {
     # items in this list become non-reserved
     nonReservedKeywordsToAdd: [
       # not in core, added in babel
+      "ANTI"
       "DISCARD"
       "IF"
       "PLANS"
@@ -146,6 +151,7 @@ data: {
       "CONSTRAINTS"
       "CONSTRUCTOR"
       "CONTAINS"
+      "CONTAINS_SUBSTR"
       "CONTINUE"
       "CONVERT"
       "CORR"
@@ -544,6 +550,7 @@ data: {
     # List of additional join types. Each is a method with no arguments.
     # Example: "LeftSemiJoin".
     joinTypes: [
+      "LeftAntiJoin",
       "LeftSemiJoin"
     ]
 
@@ -551,6 +558,7 @@ data: {
     # Return type of method implementation should be "SqlNode".
     # Example: "DateaddFunctionCall()".
     builtinFunctionCallMethods: [
+       "DatePartFunctionCall()",
        "DateaddFunctionCall()"
     ]
 
@@ -560,14 +568,13 @@ data: {
     createStatementParserMethods: [
       "SqlCreateTable"
     ]
-    
+
     statementParserMethods: [
-      "PostgresqlSqlShow()",
-      "PostgresqlSqlSetOption()",
-      "PostgresqlSqlBegin()",
-      "PostgresqlSqlDiscard()",
-      "PostgresqlSqlCommit()",
-      "PostgresqlSqlRollback()"
+      "PostgresSqlBegin()"
+      "PostgresSqlCommit()"
+      "PostgresSqlDiscard()"
+      "PostgresSqlRollback()"
+      "PostgresSqlShow()"
     ]
 
     # Binary operators tokens.
@@ -578,9 +585,9 @@ data: {
     ]
 
     # Custom identifier token.
-    # 
-    # PostgreSQL allows letters with diacritical marks and non-Latin letters 
-    # in the beginning of identifier and additionally dollar sign in the rest of identifier. 
+    #
+    # PostgreSQL allows letters with diacritical marks and non-Latin letters
+    # in the beginning of identifier and additionally dollar sign in the rest of identifier.
     # Letters with diacritical marks and non-Latin letters
     # are represented by character codes 128 to 255 (or in octal \200 to \377).
     # See https://learn.microsoft.com/en-gb/office/vba/language/reference/user-interface-help/character-set-128255
@@ -588,7 +595,7 @@ data: {
     #
     # MySQL allows digit in the beginning of identifier
     customIdentifierToken: "< IDENTIFIER: (<LETTER>|<DIGIT>|[\"\\200\"-\"\\377\"]) (<LETTER>|<DIGIT>|<DOLLAR>|[\"\\200\"-\"\\377\"])* >"
-    
+
     # Binary operators initialization.
     # Example: "InfixCast".
     extraBinaryExpressions: [
@@ -603,11 +610,13 @@ data: {
     # Example: "parserImpls.ftl".
     implementationFiles: [
       "parserImpls.ftl"
-      "parserPostgresqlImpls.ftl"
+      "parserPostgresImpls.ftl"
     ]
 
+    setOptionParserMethod: "PostgresSqlSetOption"
     includePosixOperators: true
     includeParsingStringLiteralAsArrayLiteral: true
+    includeIntervalWithoutQualifier: true
   }
 }
 

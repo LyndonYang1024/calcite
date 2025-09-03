@@ -32,6 +32,7 @@ import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.sql.validate.SelectScope;
 import org.apache.calcite.sql.validate.SqlMonotonicity;
 import org.apache.calcite.sql.validate.SqlNameMatcher;
+import org.apache.calcite.sql.validate.SqlNameMatchers;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorException;
 import org.apache.calcite.sql.validate.SqlValidatorNamespace;
@@ -39,7 +40,6 @@ import org.apache.calcite.sql.validate.SqlValidatorScope;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.util.ImmutableNullableList;
 import org.apache.calcite.util.NlsString;
-import org.apache.calcite.util.Pair;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
@@ -73,7 +73,7 @@ public class SqlCallBinding extends SqlOperatorBinding {
   //~ Instance fields --------------------------------------------------------
 
   private final SqlValidator validator;
-  private final @Nullable SqlValidatorScope scope;
+  private final SqlValidatorScope scope;
   private final SqlCall call;
 
   //~ Constructors -----------------------------------------------------------
@@ -85,20 +85,17 @@ public class SqlCallBinding extends SqlOperatorBinding {
    * @param scope     Scope of call
    * @param call      Call node
    */
-  public SqlCallBinding(
-      SqlValidator validator,
-      @Nullable SqlValidatorScope scope,
+  public SqlCallBinding(SqlValidator validator, SqlValidatorScope scope,
       SqlCall call) {
-    super(
-        validator.getTypeFactory(),
-        call.getOperator());
+    super(validator.getTypeFactory(), call.getOperator());
     this.validator = validator;
-    this.scope = scope;
+    this.scope = requireNonNull(scope, "scope");
     this.call = call;
   }
 
   //~ Methods ----------------------------------------------------------------
 
+  @Deprecated
   @Override public int getGroupCount() {
     final SelectScope selectScope =
         SqlValidatorUtil.getEnclosingSelectScope(scope);
@@ -121,6 +118,21 @@ public class SqlCallBinding extends SqlOperatorBinding {
     return validator.isAggregate(select) ? 0 : -1;
   }
 
+  @Override public boolean hasEmptyGroup() {
+    final SelectScope selectScope =
+        SqlValidatorUtil.getEnclosingSelectScope(scope);
+    if (selectScope == null) {
+      // Probably "VALUES expr". Treat same as "SELECT expr GROUP BY ()"
+      return true;
+    }
+    final SqlSelect select = selectScope.getNode();
+    final SqlNodeList group = select.getGroup();
+    if (group != null) {
+      return SqlValidatorUtil.hasEmptyGroup(group);
+    }
+    return validator.isAggregate(select);
+  }
+
   /**
    * Returns the validator.
    */
@@ -131,7 +143,7 @@ public class SqlCallBinding extends SqlOperatorBinding {
   /**
    * Returns the scope of the call.
    */
-  public @Nullable SqlValidatorScope getScope() {
+  public SqlValidatorScope getScope() {
     return scope;
   }
 
@@ -179,7 +191,7 @@ public class SqlCallBinding extends SqlOperatorBinding {
 
   /** Returns the operands to a call permuted into the same order as the
    * formal parameters of the function. */
-  private List<SqlNode> permutedOperands(final SqlCall call) {
+  private static List<SqlNode> permutedOperands(final SqlCall call) {
     final SqlOperator operator = call.getOperator();
     final SqlOperandMetadata operandMetadata =
         requireNonNull((SqlOperandMetadata) operator.getOperandTypeChecker(),
@@ -187,10 +199,10 @@ public class SqlCallBinding extends SqlOperatorBinding {
                 + ", operator " + operator);
     final List<String> paramNames = operandMetadata.paramNames();
     final List<SqlNode> permuted = new ArrayList<>();
+    // Always use case-insensitive lookup for parameter names
     final SqlNameMatcher nameMatcher =
-        validator.getCatalogReader().nameMatcher();
+        SqlNameMatchers.withCaseSensitive(false);
     for (final String paramName : paramNames) {
-      Pair<String, SqlIdentifier> args = null;
       for (int j = 0; j < call.getOperandList().size(); j++) {
         final SqlCall call2 = call.operand(j);
         assert call2.getKind() == SqlKind.ARGUMENT_ASSIGNMENT;
@@ -199,18 +211,9 @@ public class SqlCallBinding extends SqlOperatorBinding {
         if (nameMatcher.matches(operandName, paramName)) {
           permuted.add(call2.operand(0));
           break;
-        } else if (args == null
-            && nameMatcher.isCaseSensitive()
-            && operandName.equalsIgnoreCase(paramName)) {
-          args = Pair.of(paramName, operandID);
         }
         // the last operand, there is still no match.
         if (j == call.getOperandList().size() - 1) {
-          if (args != null) {
-            throw SqlUtil.newContextException(args.right.getParserPosition(),
-                RESOURCE.paramNotFoundInFunctionDidYouMean(args.right.getSimple(),
-                    operator.getName(), args.left));
-          }
           if (operandMetadata.isFixedParameters()) {
             // Not like user defined functions, we do not patch up the operands
             // with DEFAULT and then convert to nulls during sql-to-rel conversion.

@@ -41,9 +41,9 @@ import static org.apache.calcite.plan.RelOptUtil.equal;
 import static org.apache.calcite.util.Litmus.IGNORE;
 
 import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -200,7 +200,7 @@ class MutableRelTest {
     MutableRel mutableRel =
         createMutableRel("select sal from emp where deptno = 10"
             + "union select sal from emp where ename like 'John%'");
-    for (MutableRel input: mutableRel.getInputs()) {
+    for (MutableRel input : mutableRel.getInputs()) {
       assertSame(input.getParent(), mutableRel);
     }
   }
@@ -214,7 +214,7 @@ class MutableRelTest {
         + "LogicalProject(I=[$0])\n"
         + "  LogicalTableFunctionScan(invocation=[RAMP(3)], rowType=[RecordType(INTEGER I)])\n";
     MatcherAssert.assertThat(actual, Matchers.isLinux(expected));
-    assertEquals(mutableRel1, mutableRel2);
+    assertThat(mutableRel2, is(mutableRel1));
   }
 
   /** Verifies equivalence of {@link MutableScan}. */
@@ -293,7 +293,7 @@ class MutableRelTest {
     final String msg3 =
         "The converted new rel is different from the original rel.\n"
         + "Original rel: " + origRelStr + ";\nNew rel: " + newRelStr;
-    assertEquals(origRelStr, newRelStr, msg3);
+    assertThat(msg3, newRelStr, is(origRelStr));
   }
 
   private static MutableRel createMutableRel(String sql) {

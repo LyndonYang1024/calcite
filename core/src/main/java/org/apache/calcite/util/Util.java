@@ -40,7 +40,6 @@ import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Sets;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
 
 import org.apiguardian.api.API;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -68,9 +67,9 @@ import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.net.MalformedURLException;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -115,7 +114,9 @@ import java.util.regex.Pattern;
 import java.util.stream.Collector;
 
 import static org.apache.calcite.linq4j.Nullness.castNonNull;
+import static org.apache.calcite.util.ReflectUtil.isStatic;
 
+import static java.lang.Integer.parseInt;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -220,10 +221,7 @@ public class Util {
    * you are not interested in, but you don't want the compiler to warn that
    * you are not using it.
    */
-  public static void discard(@Nullable Object o) {
-    if (false) {
-      discard(o);
-    }
+  public static void discard(@Nullable Object unused) {
   }
 
   /**
@@ -231,10 +229,7 @@ public class Util {
    * you are not interested in, but you don't want the compiler to warn that
    * you are not using it.
    */
-  public static void discard(int i) {
-    if (false) {
-      discard(i);
-    }
+  public static void discard(int unused) {
   }
 
   /**
@@ -242,10 +237,7 @@ public class Util {
    * you are not interested in, but you don't want the compiler to warn that
    * you are not using it.
    */
-  public static void discard(boolean b) {
-    if (false) {
-      discard(b);
-    }
+  public static void discard(boolean unused) {
   }
 
   /**
@@ -253,10 +245,7 @@ public class Util {
    * you are not interested in, but you don't want the compiler to warn that
    * you are not using it.
    */
-  public static void discard(double d) {
-    if (false) {
-      discard(d);
-    }
+  public static void discard(double unused) {
   }
 
   /**
@@ -479,7 +468,7 @@ public class Util {
       Field[] fields = clazz.getFields();
       int printed = 0;
       for (Field field : fields) {
-        if (Modifier.isStatic(field.getModifiers())) {
+        if (isStatic(field)) {
           continue;
         }
         if (printed++ > 0) {
@@ -546,6 +535,21 @@ public class Util {
   }
 
   /**
+   * Formats a double value to a String ensuring that the output
+   * is in scientific notation if the value is not "special".
+   * (Special values include infinities and NaN.)
+   */
+  public static String toScientificNotation(Double d) {
+    String repr = Double.toString(d);
+    if (!repr.toLowerCase(Locale.ENGLISH).contains("e")
+        && !d.isInfinite()
+        && !d.isNaN()) {
+      repr += "E0";
+    }
+    return repr;
+  }
+
+  /**
    * Formats a {@link BigDecimal} value to a string in scientific notation For
    * example<br>
    *
@@ -569,6 +573,10 @@ public class Util {
     int len = unscaled.length();
     int scale = bd.scale();
     int e = len - scale - 1;
+    if (bd.stripTrailingZeros().equals(BigDecimal.ZERO)) {
+      // Without this adjustment 0.0 generates 0E-1
+      e = 0;
+    }
 
     StringBuilder ret = new StringBuilder();
     if (bd.signum() < 0) {
@@ -655,7 +663,7 @@ public class Util {
       }
     }
     path = "file://" + path;
-    return new URL(path);
+    return URI.create(path).toURL();
   }
 
   /**
@@ -795,7 +803,7 @@ public class Util {
    * Returns whether s == null or if s.length() == 0.
    */
   public static boolean isNullOrEmpty(@Nullable String s) {
-    return (null == s) || (s.length() == 0);
+    return s == null || s.isEmpty();
   }
 
   /**
@@ -863,7 +871,7 @@ public class Util {
    * rather than constructing intermediate strings.
    *
    * @see org.apache.calcite.linq4j.function.Functions#generate */
-  public static <E> StringBuilder printList(StringBuilder sb, int elementCount,
+  public static StringBuilder printList(StringBuilder sb, int elementCount,
       ObjIntConsumer<StringBuilder> consumer) {
     if (elementCount == 0) {
       return sb.append("[]");
@@ -925,25 +933,10 @@ public class Util {
     return new AssertionError("Internal error: " + s, e);
   }
 
-  /** Until we upgrade to Guava 19. */
-  @CanIgnoreReturnValue
-  public static <T> T verifyNotNull(@Nullable T reference) {
-    Bug.upgrade("Remove when minimum Guava version is 17");
-    return requireNonNull(reference, "expected a non-null reference");
-  }
-
-  /** As {@link Throwables}{@code .throwIfUnchecked(Throwable)},
-   * which was introduced in Guava 20,
-   * but we don't require Guava version 20 yet. */
+  /** As {@link Throwables#throwIfUnchecked(Throwable)}. */
+  @Deprecated // to be removed before 2.0
   public static void throwIfUnchecked(Throwable throwable) {
-    Bug.upgrade("Remove when minimum Guava version is 20");
-    requireNonNull(throwable, "throwable");
-    if (throwable instanceof RuntimeException) {
-      throw (RuntimeException) throwable;
-    }
-    if (throwable instanceof Error) {
-      throw (Error) throwable;
-    }
+    Throwables.throwIfUnchecked(throwable);
   }
 
   /**
@@ -959,7 +952,7 @@ public class Util {
    */
   @API(since = "1.26", status = API.Status.EXPERIMENTAL)
   public static RuntimeException throwAsRuntime(Throwable throwable) {
-    throwIfUnchecked(throwable);
+    Throwables.throwIfUnchecked(throwable);
     throw new RuntimeException(throwable);
   }
 
@@ -1090,7 +1083,7 @@ public class Util {
    * feature has not been implemented, but should be.
    *
    * <p>If every 'hole' in our functionality uses this method, it will be
-   * easier for us to identity the holes. Throwing a
+   * easier for us to identify the holes. Throwing a
    * {@link java.lang.UnsupportedOperationException} isn't as good, because
    * sometimes we actually want to partially implement an API.
    *
@@ -1579,7 +1572,7 @@ public class Util {
     String value =
         requireNonNull(matcher.group(index),
             () -> "no group for index " + index + ", matcher " + matcher);
-    return Integer.parseInt(value);
+    return parseInt(value);
   }
 
   /**
@@ -2013,20 +2006,7 @@ public class Util {
    */
   public static <E> List<E> quotientList(
       final List<E> list, final int n, final int k) {
-    if (n <= 0 || k < 0 || k >= n) {
-      throw new IllegalArgumentException(
-          "n must be positive; k must be between 0 and n - 1");
-    }
-    final int size = (list.size() + n - k - 1) / n;
-    return new AbstractList<E>() {
-      @Override public E get(int index) {
-        return list.get(index * n + k);
-      }
-
-      @Override public int size() {
-        return size;
-      }
-    };
+    return new QuotientList<>(list, n, k);
   }
 
   /** Given a list with N elements
@@ -2035,7 +2015,6 @@ public class Util {
    * [ (e<sub>0</sub>, e<sub>1</sub>),
    * (e<sub>2</sub>, e<sub>3</sub>), ... ]. */
   public static <E> List<Pair<E, E>> pairs(final List<E> list) {
-    //noinspection unchecked
     return Pair.zip(quotientList(list, 2, 0),
         quotientList(list, 2, 1));
   }
@@ -2107,7 +2086,7 @@ public class Util {
    *
    * @throws java.lang.IndexOutOfBoundsException if the list is empty
    */
-  public <E> E first(List<E> list) {
+  public static <E> E first(List<E> list) {
     return list.get(0);
   }
 
@@ -2219,6 +2198,49 @@ public class Util {
       }
     }
     return -1;
+  }
+
+  /**
+   * Returns whether the elements of {@code list} are definitely distinct
+   * and not null, working quickly and sometimes giving false negatives for
+   * large lists.
+   *
+   * <p>A return of true means that the list is distinct (true positive);
+   * a return of false means either that list is not distinct (true negative)
+   * or that the list is large and distinct (false negative).
+   * (If the list is large, a hash map would be required to do an accurate
+   * job, and this method does its best quickly.)
+   */
+  public static <E> boolean isDefinitelyDistinctAndNonNull(
+      List<? extends @Nullable E> list) {
+    final int size = list.size();
+    // An empty list is distinct.
+    if (size == 0) {
+      return true;
+    }
+    // Make sure that element zero is not null.
+    if (list.get(0) == null) {
+      return false;
+    }
+    if (size < QUICK_DISTINCT) {
+      // For smaller lists, avoid the overhead of creating a set. Threshold
+      // determined empirically using UtilTest.testIsDistinctBenchmark.
+      for (int i = 1; i < size; i++) {
+        final E e = list.get(i);
+        if (e == null) {
+          return false;
+        }
+        for (int j = i - 1; j >= 0; j--) {
+          final E e1 = list.get(j);
+          if (e.equals(e1)) {
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+    // Too expensive to check.
+    return false;
   }
 
   /** Converts a list into a list with unique elements.
@@ -2569,8 +2591,7 @@ public class Util {
     }
   }
 
-  /** Creates a {@link Calendar} in the UTC time zone and root locale.
-   * Does not use the time zone or locale. */
+  /** Creates a {@link Calendar} in the UTC time zone and root locale. */
   public static Calendar calendar() {
     return Calendar.getInstance(DateTimeUtils.UTC_ZONE, Locale.ROOT);
   }
@@ -2583,26 +2604,22 @@ public class Util {
     return calendar;
   }
 
+  /** Creates a {@link Calendar} in the specified time zone. */
+  public static Calendar calendar(long millis, TimeZone timeZone) {
+    Calendar calendar = Calendar.getInstance(timeZone, Locale.ROOT);
+    calendar.setTimeInMillis(millis);
+    return calendar;
+  }
+
   /**
    * Returns a {@code Collector} that accumulates the input elements into a
    * Guava {@link ImmutableList} via a {@link ImmutableList.Builder}.
    *
-   * <p>It will be obsolete when we move to {@link Bug#upgrade Guava 28.0-jre}.
-   * Guava 21.0 introduced {@code ImmutableList.toImmutableList()}, but it had
-   * a {@link com.google.common.annotations.Beta} tag until 28.0-jre.
-   *
-   * <p>In {@link Bug#upgrade Guava 21.0}, change this method to call
-   * {@code ImmutableList.toImmutableList()}, ignoring the {@code @Beta} tag.
-   *
-   * @param <T> Type of the input elements
-   *
-   * @return a {@code Collector} that collects all the input elements into an
-   * {@link ImmutableList}, in encounter order
+   * @deprecated Use {@link ImmutableList#toImmutableList()}
    */
-  public static <T> Collector<T, ImmutableList.Builder<T>, ImmutableList<T>>
-      toImmutableList() {
-    return Collector.of(ImmutableList::builder, ImmutableList.Builder::add, Util::combine,
-        ImmutableList.Builder::build);
+  @Deprecated // to be removed before 2.0
+  public static <T> Collector<T, ?, ImmutableList<T>> toImmutableList() {
+    return ImmutableList./* do not simplify. */toImmutableList();
   }
 
   /** Combines a second immutable list builder into a first. */
@@ -2630,7 +2647,9 @@ public class Util {
   /** Transforms a list, applying a function to each element. */
   public static <F, T> List<T> transform(List<? extends F> list,
       java.util.function.Function<? super F, ? extends T> function) {
-    if (list instanceof RandomAccess) {
+    if (list.isEmpty() && list instanceof ImmutableList) {
+      return ImmutableList.of(); // save ourselves some effort
+    } else if (list instanceof RandomAccess) {
       return new RandomAccessTransformingList<>(list, function);
     } else {
       return new TransformingList<>(list, function);
@@ -2641,7 +2660,9 @@ public class Util {
    * the element's index in the list. */
   public static <F, T> List<T> transformIndexed(List<? extends F> list,
       BiFunction<? super F, Integer, ? extends T> function) {
-    if (list instanceof RandomAccess) {
+    if (list.isEmpty() && list instanceof ImmutableList) {
+      return ImmutableList.of(); // save ourselves some effort
+    } else if (list instanceof RandomAccess) {
       return new RandomAccessTransformingIndexedList<>(list, function);
     } else {
       return new TransformingIndexedList<>(list, function);
@@ -2933,6 +2954,38 @@ public class Util {
 
     @Override public void remove() {
       delegate.remove();
+    }
+  }
+
+  /** Implements {@link Util#quotientList(List, int, int)};
+   * an anonymous inner class would not be able to implement
+   * {@link RandomAccess}, which is essential for how this class is used.
+   *
+   * @param <E> Element type */
+  private static class QuotientList<E>
+      extends AbstractList<E> implements RandomAccess {
+    private final List<E> list;
+    private final int n;
+    private final int k;
+    private final int size;
+
+    QuotientList(List<E> list, int n, int k) {
+      if (k < 0 || n <= 0 || k >= n) {
+        throw new IllegalArgumentException(
+            "n must be positive; k must be between 0 and n - 1");
+      }
+      this.list = list;
+      this.n = n;
+      this.k = k;
+      this.size = (list.size() + n - k - 1) / n;
+    }
+
+    @Override public int size() {
+      return size;
+    }
+
+    @Override public E get(int index) {
+      return list.get(index * n + k);
     }
   }
 }

@@ -38,6 +38,10 @@ import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.joou.UByte;
+import org.joou.UInteger;
+import org.joou.ULong;
+import org.joou.UShort;
 import org.locationtech.jts.geom.Geometry;
 
 import java.lang.reflect.Field;
@@ -50,6 +54,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import static org.apache.calcite.util.ReflectUtil.isStatic;
 
 import static java.util.Objects.requireNonNull;
 
@@ -76,13 +82,11 @@ public class JavaTypeFactoryImpl
   @Override public RelDataType createStructType(Class type) {
     final List<RelDataTypeField> list = new ArrayList<>();
     for (Field field : type.getFields()) {
-      if (!Modifier.isStatic(field.getModifiers())) {
+      if (!isStatic(field)) {
         // FIXME: watch out for recursion
         final Type fieldType = fieldType(field);
         list.add(
-            new RelDataTypeFieldImpl(
-                field.getName(),
-                list.size(),
+            new RelDataTypeFieldImpl(field.getName(), list.size(),
                 createType(fieldType)));
       }
     }
@@ -126,17 +130,20 @@ public class JavaTypeFactoryImpl
       final Types.ArrayType arrayType = (Types.ArrayType) type;
       final RelDataType componentRelType =
           createType(arrayType.getComponentType());
-      return createArrayType(
-          createTypeWithNullability(componentRelType,
+      RelDataType result =
+          createArrayType(
+              createTypeWithNullability(componentRelType,
               arrayType.componentIsNullable()), arrayType.maximumCardinality());
+      return createTypeWithNullability(result, true);
     }
     if (type instanceof Types.MapType) {
       final Types.MapType mapType = (Types.MapType) type;
       final RelDataType keyRelType = createType(mapType.getKeyType());
       final RelDataType valueRelType = createType(mapType.getValueType());
-      return createMapType(
-          createTypeWithNullability(keyRelType, mapType.keyIsNullable()),
-          createTypeWithNullability(valueRelType, mapType.valueIsNullable()));
+      RelDataType result =
+          createMapType(createTypeWithNullability(keyRelType, mapType.keyIsNullable()),
+              createTypeWithNullability(valueRelType, mapType.valueIsNullable()));
+      return createTypeWithNullability(result, true);
     }
     if (!(type instanceof Class)) {
       throw new UnsupportedOperationException("TODO: implement " + type);
@@ -180,6 +187,7 @@ public class JavaTypeFactoryImpl
       case DATE:
       case TIME:
       case TIME_WITH_LOCAL_TIME_ZONE:
+      case TIME_TZ:
       case INTEGER:
       case INTERVAL_YEAR:
       case INTERVAL_YEAR_MONTH:
@@ -187,6 +195,7 @@ public class JavaTypeFactoryImpl
         return type.isNullable() ? Integer.class : int.class;
       case TIMESTAMP:
       case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+      case TIMESTAMP_TZ:
       case BIGINT:
       case INTERVAL_DAY:
       case INTERVAL_DAY_HOUR:
@@ -223,6 +232,14 @@ public class JavaTypeFactoryImpl
         return Object.class;
       case NULL:
         return Void.class;
+      case UTINYINT:
+        return UByte.class;
+      case USMALLINT:
+        return UShort.class;
+      case UINTEGER:
+        return UInteger.class;
+      case UBIGINT:
+        return ULong.class;
       default:
         break;
       }

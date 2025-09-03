@@ -22,8 +22,10 @@ import org.apache.calcite.rel.core.RelFactories;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.runtime.PairList;
 import org.apache.calcite.runtime.Utilities;
 import org.apache.calcite.sql.SqlCall;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperator;
@@ -62,7 +64,6 @@ import static org.apache.calcite.test.Matchers.relIsValid;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasSize;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import static java.util.Objects.requireNonNull;
@@ -184,7 +185,7 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
       final RelDataType rowType =
           validator.getValidatedNodeType(validatedNode);
       final List<RelDataTypeField> fields = rowType.getFieldList();
-      assertEquals(1, fields.size(), "expected query to return 1 field");
+      assertThat("expected query to return 1 field", fields, hasSize(1));
       final RelDataType actualType = fields.get(0).getType();
       String actual = SqlTests.getTypeString(actualType);
       assertThat(actual, matcher);
@@ -221,7 +222,7 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
   }
 
   @Override public void check(SqlTestFactory factory,
-      String query, TypeChecker typeChecker,
+      String queryWithCarets, TypeChecker typeChecker,
       ParameterChecker parameterChecker, ResultChecker resultChecker) {
     // This implementation does NOT check the result!
     // All it does is check the return type.
@@ -231,14 +232,16 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
 
     // Parse and validate. There should be no errors.
     // There must be 1 column. Get its type.
-    RelDataType actualType = getColumnType(factory, query);
+    RelDataType actualType = getColumnType(factory, queryWithCarets);
 
     // Check result type.
-    typeChecker.checkType(() -> "Query: " + query, actualType);
+    typeChecker.checkType(() -> "Query: " + queryWithCarets, actualType);
 
-    Pair<SqlValidator, SqlNode> p = parseAndValidate(factory, query);
-    SqlValidator validator = requireNonNull(p.left);
-    SqlNode n = requireNonNull(p.right);
+    // Unescape the carets that may be present in the query
+    final StringAndPos pos = StringAndPos.of(queryWithCarets);
+    Pair<SqlValidator, SqlNode> p = parseAndValidate(factory, pos.sql);
+    SqlValidator validator = p.left;
+    SqlNode n = p.right;
     final RelDataType parameterRowType = validator.getParameterRowType(n);
     parameterChecker.checkParameters(parameterRowType);
   }
@@ -246,16 +249,16 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
   @Override public void validateAndThen(SqlTestFactory factory,
       StringAndPos sap, ValidatedNodeConsumer consumer) {
     Pair<SqlValidator, SqlNode> p = parseAndValidate(factory, sap.sql);
-    SqlValidator validator = requireNonNull(p.left);
-    SqlNode rewrittenNode = requireNonNull(p.right);
+    SqlValidator validator = p.left;
+    SqlNode rewrittenNode = p.right;
     consumer.accept(sap, validator, rewrittenNode);
   }
 
   @Override public <R> R validateAndApply(SqlTestFactory factory,
       StringAndPos sap, ValidatedNodeFunction<R> function) {
     Pair<SqlValidator, SqlNode> p = parseAndValidate(factory, sap.sql);
-    SqlValidator validator = requireNonNull(p.left);
-    SqlNode rewrittenNode = requireNonNull(p.right);
+    SqlValidator validator = p.left;
+    SqlNode rewrittenNode = p.right;
     return function.apply(sap, validator, rewrittenNode);
   }
 
@@ -264,12 +267,12 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
     if (runtime) {
       // We need to test that the expression fails at runtime.
       // Ironically, that means that it must succeed at prepare time.
-      final String sql = buildQuery(sap.addCarets());
+      final String sql = buildQuery(sap);
       Pair<SqlValidator, SqlNode> p = parseAndValidate(factory, sql);
       SqlNode n = p.right;
       assertNotNull(n);
     } else {
-      StringAndPos sap1 = StringAndPos.of(buildQuery(sap.addCarets()));
+      StringAndPos sap1 = StringAndPos.of(buildQuery(sap));
       checkQueryFails(factory, sap1, expectedError);
     }
   }
@@ -295,8 +298,23 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
     }
   }
 
-  public static String buildQuery(String expression) {
-    return "values (" + expression + ")";
+  /**
+   * Build a legal query from an expression with carets.
+   *
+   * <p>@deprecated Please use {@link AbstractSqlTester#buildQuery(StringAndPos)}
+   */
+  @Deprecated
+  public static String buildQuery(String expressionWithCarets) {
+    StringAndPos sap = StringAndPos.of(expressionWithCarets);
+    return buildQuery(sap);
+  }
+
+  public static String buildQuery(StringAndPos sap) {
+    return "values (" + sap.sql + ")";
+  }
+
+  public static StringAndPos buildQueryWithPos(StringAndPos sap) {
+    return StringAndPos.of("values (" + sap.addCarets() + ")");
   }
 
   public static String buildQueryAgg(String expression) {
@@ -321,21 +339,24 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
    * {@code CASE 1 WHEN 2 THEN 'a' ELSE NULL END} are left as is.
    *
    * @param factory Test factory
-   * @param expression Scalar expression
+   * @param expressionWithCarets Scalar expression that may contain carets
    * @return Query that evaluates a scalar expression
    */
-  protected String buildQuery2(SqlTestFactory factory, String expression) {
-    if (expression.matches("(?i).*(percentile_(cont|disc)|convert|sort_array)\\(.*")) {
+  protected String buildQuery2(SqlTestFactory factory, String expressionWithCarets) {
+    if (expressionWithCarets.matches(
+        "(?i).*(percentile_(cont|disc)|convert|sort_array|cast)\\(.*")) {
       // PERCENTILE_CONT requires its argument to be a literal,
       // so converting its argument to a column will cause false errors.
       // Similarly, MSSQL-style CONVERT.
-      return buildQuery(expression);
+      return buildQuery(expressionWithCarets);
     }
     // "values (1 < 5)"
     // becomes
     // "select p0 < p1 from (values (1, 5)) as t(p0, p1)"
     SqlNode x;
-    final String sql = "values (" + expression + ")";
+    // Expression may contain escaped carets; unescape them.
+    final StringAndPos sap = StringAndPos.of(expressionWithCarets);
+    final String sql = "values (" + sap.sql + ")";
     try {
       x = parseQuery(factory, sql);
     } catch (SqlParseException e) {
@@ -360,15 +381,18 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
             return literal;
           }
 
-          @Override public SqlNode visit(SqlCall call) {
+          @Override public @Nullable SqlNode visit(SqlCall call) {
             SqlOperator operator = call.getOperator();
+            if (operator.getKind() == SqlKind.LAMBDA) {
+              return call;
+            }
             if (operator instanceof SqlUnresolvedFunction) {
               final SqlUnresolvedFunction unresolvedFunction =
                   (SqlUnresolvedFunction) operator;
               final SqlOperator lookup =
                   SqlValidatorUtil.lookupSqlFunctionByID(
                       SqlStdOperatorTable.instance(),
-                      unresolvedFunction.getSqlIdentifier(),
+                      requireNonNull(unresolvedFunction.getSqlIdentifier()),
                       unresolvedFunction.getFunctionType());
               if (lookup != null) {
                 operator = lookup;
@@ -380,6 +404,11 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
             if (operator == SqlStdOperatorTable.CAST
                 && isNull(call.operand(0))) {
               literalSet.add(call);
+              return call;
+            } else if (operator == SqlStdOperatorTable.TRIM) {
+              // see https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6780
+              // don't extract trimmed literal for TRIM function
+              call.operand(2).accept(this);
               return call;
             } else if (ops.contains(operator)) {
               // "Argument to function 'LOCALTIME' must be a
@@ -407,7 +436,7 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
       return -Utilities.compare(pos0.getColumnNum(), pos1.getColumnNum());
     });
     String sql2 = sql;
-    final List<Pair<String, String>> values = new ArrayList<>();
+    final PairList<String, String> values = PairList.of();
     int p = 0;
     for (SqlNode literal : nodes) {
       final SqlParserPos pos = literal.getParserPosition();
@@ -420,30 +449,31 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
               pos.getEndLineNum(),
               pos.getEndColumnNum()) + 1;
       String param = "p" + p++;
-      values.add(Pair.of(sql2.substring(start, end), param));
+      values.add(sql2.substring(start, end), param);
       sql2 = sql2.substring(0, start)
           + param
           + sql2.substring(end);
     }
     if (values.isEmpty()) {
-      values.add(Pair.of("1", "p0"));
+      values.add("1", "p0");
     }
     return "select "
         + sql2.substring("values (".length(), sql2.length() - 1)
         + " from (values ("
-        + Util.commaList(Pair.left(values))
+        + Util.commaList(values.leftList())
         + ")) as t("
-        + Util.commaList(Pair.right(values))
+        + Util.commaList(values.rightList())
         + ")";
   }
 
   @Override public void forEachQuery(SqlTestFactory factory,
-      String expression, Consumer<String> consumer) {
+      String expressionWithCarets, Consumer<String> consumer) {
     // Why not return a list? If there is a syntax error in the expression, the
     // consumer will discover it before we try to parse it to do substitutions
     // on the parse tree.
-    consumer.accept("values (" + expression + ")");
-    consumer.accept(buildQuery2(factory, expression));
+    consumer.accept("values (" + expressionWithCarets + ")");
+    final String query2 = buildQuery2(factory, expressionWithCarets);
+    consumer.accept(SqlParserUtil.escapeCarets(query2));
   }
 
   @Override public void assertConvertsTo(SqlTestFactory factory,
@@ -479,8 +509,8 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
     String sql2 = diffRepos.expand("sql", sql);
     final Pair<SqlValidator, RelRoot> pair =
         convertSqlToRel2(factory, sql2, decorrelate, trim);
-    final RelRoot root = requireNonNull(pair.right);
-    final SqlValidator validator = requireNonNull(pair.left);
+    final RelRoot root = pair.right;
+    final SqlValidator validator = pair.left;
     RelNode rel = root.project();
 
     assertNotNull(rel);

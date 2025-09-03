@@ -309,10 +309,6 @@ LogicalRepeatUnion(all=[true])
         LogicalTableScan(table=[[aux]])
 {% endhighlight %}
 
-Note that there is no support for recursive queries in the SQL layer yet
-([CALCITE-129](https://issues.apache.org/jira/browse/CALCITE-129));
-the `WITH RECURSIVE` query above is only for illustrative purposes.
-
 ### API summary
 
 #### Relational operators
@@ -351,6 +347,7 @@ return the `RelBuilder`.
 | `intersect(all [, n])` | Creates an [Intersect]({{ site.apiRoot }}/org/apache/calcite/rel/core/Intersect.html) of the `n` (default two) most recent relational expressions.
 | `minus(all)` | Creates a [Minus]({{ site.apiRoot }}/org/apache/calcite/rel/core/Minus.html) of the two most recent relational expressions.
 | `repeatUnion(tableName, all [, n])` | Creates a [RepeatUnion]({{ site.apiRoot }}/org/apache/calcite/rel/core/RepeatUnion.html) associated to a [TransientTable]({{ site.apiRoot }}/org/apache/calcite/schema/TransientTable.html) of the two most recent relational expressions, with `n` maximum number of iterations (default -1, i.e. no limit).
+| `sample(bernoulli, rate [, repeatableSeed])` | Creates a [sample]({{ site.apiRoot }}/org/apache/calcite/rel/core/Sample.html) of at given sampling rate.
 | `snapshot(period)` | Creates a [Snapshot]({{ site.apiRoot }}/org/apache/calcite/rel/core/Snapshot.html) of the given snapshot period.
 | `match(pattern, strictStart,` `strictEnd, patterns, measures,` `after, subsets, allRows,` `partitionKeys, orderKeys,` `interval)` | Creates a [Match]({{ site.apiRoot }}/org/apache/calcite/rel/core/Match.html).
 
@@ -543,6 +540,7 @@ To further modify the `OverCall`, call its methods:
 | `rowsFrom(lower)`    | Creates a row-based window bounded below, `ROWS BETWEEN lower AND CURRENT ROW`
 | `rowsTo(upper)`      | Creates a row-based window bounded above, `ROWS BETWEEN CURRENT ROW AND upper`
 | `rowsBetween(lower, upper)` | Creates a rows-based window, `ROWS BETWEEN lower AND upper`
+| `exclude(excludeType)` | Exclude certain rows from the frame (see SQL `EXCLUDE`)
 | `partitionBy(expr...)`<br/>`partitionBy(exprList)` | Partitions the window on the given expressions (see SQL `PARTITION BY`)
 | `orderBy(expr...)`<br/>`sort(exprList)` | Sorts the rows in the window (see SQL `ORDER BY`)
 | `allowPartial(b)`    | Sets whether to allow partial width windows; default true

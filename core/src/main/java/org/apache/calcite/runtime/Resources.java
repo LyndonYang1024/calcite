@@ -31,7 +31,6 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
@@ -55,9 +54,14 @@ import java.util.ResourceBundle;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static java.lang.Boolean.parseBoolean;
+
+import static java.lang.Double.parseDouble;
+
 import static org.apache.calcite.linq4j.Nullness.castNonNull;
 
 import static java.util.Objects.requireNonNull;
+import static org.apache.calcite.util.ReflectUtil.isStatic;
 
 /**
  * Defining wrapper classes around resources that allow the compiler to check
@@ -233,7 +237,7 @@ public class Resources {
   public static void validate(Object o, EnumSet<Validation> validations) {
     int count = 0;
     for (Method method : o.getClass().getMethods()) {
-      if (!Modifier.isStatic(method.getModifiers())
+      if (!isStatic(method)
           && Inst.class.isAssignableFrom(method.getReturnType())) {
         ++count;
         final Class<?>[] parameterTypes = method.getParameterTypes();
@@ -243,7 +247,9 @@ public class Resources {
         }
         try {
           Inst inst = (Inst) method.invoke(o, args);
-          assert inst != null : "got null from " + method;
+          if (inst == null) {
+            throw new AssertionError("got null from " + method);
+          }
           inst.validate(validations);
         } catch (IllegalAccessException e) {
           throw new RuntimeException("in " + method, e);
@@ -692,7 +698,7 @@ public class Resources {
       super(accessor, method);
       final Default resource = getDefault();
       if (resource != null) {
-        defaultValue = Boolean.parseBoolean(resource.value());
+        defaultValue = parseBoolean(resource.value());
       } else {
         defaultValue = false;
       }
@@ -723,7 +729,7 @@ public class Resources {
       super(accessor, method);
       final Default resource = getDefault();
       if (resource != null) {
-        defaultValue = Double.parseDouble(resource.value());
+        defaultValue = parseDouble(resource.value());
       } else {
         defaultValue = 0d;
       }
@@ -1147,7 +1153,7 @@ public class Resources {
     public boolean booleanValue(BooleanProp p) {
       final String s = properties.getProperty(p.key);
       if (s != null) {
-        return Boolean.parseBoolean(s);
+        return parseBoolean(s);
       }
       p.checkDefault2();
       return p.defaultValue;
@@ -1156,14 +1162,14 @@ public class Resources {
     @Override
     public boolean booleanValue(BooleanProp p, boolean defaultValue) {
       final String s = properties.getProperty(p.key);
-      return s == null ? defaultValue : Boolean.parseBoolean(s);
+      return s == null ? defaultValue : parseBoolean(s);
     }
 
     @Override
     public double doubleValue(DoubleProp p) {
       final String s = properties.getProperty(p.key);
       if (s != null) {
-        return Double.parseDouble(s);
+        return parseDouble(s);
       }
       p.checkDefault2();
       return p.defaultValue;
@@ -1172,7 +1178,7 @@ public class Resources {
     @Override
     public double doubleValue(DoubleProp p, double defaultValue) {
       final String s = properties.getProperty(p.key);
-      return s == null ? defaultValue : Double.parseDouble(s);
+      return s == null ? defaultValue : parseDouble(s);
     }
   }
 }

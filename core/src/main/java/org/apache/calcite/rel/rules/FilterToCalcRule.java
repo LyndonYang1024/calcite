@@ -25,6 +25,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexProgram;
 import org.apache.calcite.rex.RexProgramBuilder;
+import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.tools.RelBuilderFactory;
 
 import org.immutables.value.Value;
@@ -36,7 +37,7 @@ import org.immutables.value.Value;
  *
  * <p>The rule does <em>NOT</em> fire if the child is a
  * {@link org.apache.calcite.rel.logical.LogicalFilter} or a
- * {@link org.apache.calcite.rel.logical.LogicalProject} (we assume they they
+ * {@link org.apache.calcite.rel.logical.LogicalProject} (we assume that they
  * will be converted using {@link FilterToCalcRule} or
  * {@link ProjectToCalcRule}) or a
  * {@link org.apache.calcite.rel.logical.LogicalCalc}. This
@@ -85,7 +86,10 @@ public class FilterToCalcRule
   public interface Config extends RelRule.Config {
     Config DEFAULT = ImmutableFilterToCalcRule.Config.of()
         .withOperandSupplier(b ->
-            b.operand(LogicalFilter.class).anyInputs());
+            b.operand(LogicalFilter.class)
+                .predicate(filter ->
+                    !RexUtil.SubQueryFinder.containsSubQuery(filter))
+                .anyInputs());
 
     @Override default FilterToCalcRule toRule() {
       return new FilterToCalcRule(this);

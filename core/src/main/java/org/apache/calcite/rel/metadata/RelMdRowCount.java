@@ -17,6 +17,7 @@
 package org.apache.calcite.rel.metadata;
 
 import org.apache.calcite.adapter.enumerable.EnumerableLimit;
+import org.apache.calcite.plan.RelOptPredicateList;
 import org.apache.calcite.plan.volcano.RelSubset;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.SingleRel;
@@ -28,6 +29,7 @@ import org.apache.calcite.rel.core.Intersect;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.Minus;
 import org.apache.calcite.rel.core.Project;
+import org.apache.calcite.rel.core.Sample;
 import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.core.TableModify;
 import org.apache.calcite.rel.core.TableScan;
@@ -147,11 +149,11 @@ public class RelMdRowCount
       return null;
     }
 
-    final int offset = rel.offset instanceof RexLiteral ? RexLiteral.intValue(rel.offset) : 0;
+    final long offset = rel.offset instanceof RexLiteral ? RexLiteral.longValue(rel.offset) : 0;
     rowCount = Math.max(rowCount - offset, 0D);
 
     final double limit =
-        rel.fetch instanceof RexLiteral ? RexLiteral.intValue(rel.fetch) : rowCount;
+        rel.fetch instanceof RexLiteral ? RexLiteral.longValue(rel.fetch) : rowCount;
     return limit < rowCount ? limit : rowCount;
   }
 
@@ -161,12 +163,18 @@ public class RelMdRowCount
       return null;
     }
 
-    final int offset = rel.offset instanceof RexLiteral ? RexLiteral.intValue(rel.offset) : 0;
+    final long offset = rel.offset instanceof RexLiteral ? RexLiteral.longValue(rel.offset) : 0;
     rowCount = Math.max(rowCount - offset, 0D);
 
     final double limit =
-        rel.fetch instanceof RexLiteral ? RexLiteral.intValue(rel.fetch) : rowCount;
+        rel.fetch instanceof RexLiteral ? RexLiteral.longValue(rel.fetch) : rowCount;
     return limit < rowCount ? limit : rowCount;
+  }
+
+  public @Nullable Double getRowCount(Sample rel, RelMetadataQuery mq) {
+    final Double inputRowCount = mq.getRowCount(rel.getInput());
+    final double sampleRate = rel.getSamplingParameters().sampleRate.doubleValue();
+    return sampleRate * inputRowCount;
   }
 
   // Covers Converter, Interpreter
@@ -184,6 +192,17 @@ public class RelMdRowCount
       // Aggregate with no GROUP BY always returns 1 row (even on empty table).
       return 1D;
     }
+
+    // Aggregate with constant GROUP BY always returns 1 row
+    if (rel.getGroupType() == Aggregate.Group.SIMPLE) {
+      final RelOptPredicateList predicateList =
+          mq.getPulledUpPredicates(rel.getInput());
+      if (!RelOptPredicateList.isEmpty(predicateList)
+          && RelMdMaxRowCount.allGroupKeysAreConstant(rel, predicateList)) {
+        return 1D;
+      }
+    }
+
     // rowCount is the cardinality of the group by columns
     Double distinctRowCount =
         mq.getDistinctRowCount(rel.getInput(), groupKey, null);

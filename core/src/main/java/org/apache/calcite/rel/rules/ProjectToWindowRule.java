@@ -45,7 +45,6 @@ import org.apache.calcite.util.graph.DefaultEdge;
 import org.apache.calcite.util.graph.DirectedGraph;
 import org.apache.calcite.util.graph.TopologicalOrderIterator;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
 import org.immutables.value.Value;
@@ -57,6 +56,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 /**
  * Planner rule that slices a
  * {@link org.apache.calcite.rel.core.Project}
@@ -65,7 +66,7 @@ import java.util.Set;
  *
  * <p>The sections which contain windowed agg functions become instances of
  * {@link org.apache.calcite.rel.logical.LogicalWindow}.
- * If the {@link org.apache.calcite.rel.logical.LogicalCalc} does not contain
+ * If the {@link org.apache.calcite.rel.core.Project} does not contain
  * any windowed agg functions, does nothing.
  *
  * <p>There is also a variant that matches
@@ -255,7 +256,7 @@ public abstract class ProjectToWindowRule
 
           @Override protected RelNode makeRel(RelOptCluster cluster, RelTraitSet traitSet,
               RelBuilder relBuilder, RelNode input, RexProgram program) {
-            Preconditions.checkArgument(program.getCondition() == null,
+            checkArgument(program.getCondition() == null,
                 "WindowedAggregateRel cannot accept a condition");
             return LogicalWindow.create(cluster, traitSet, relBuilder, input,
                 program);
@@ -283,7 +284,7 @@ public abstract class ProjectToWindowRule
         if (expr instanceof RexOver) {
           final RexOver over = (RexOver) expr;
 
-          // If we can found an existing cohort which satisfies the two conditions,
+          // If we can find an existing cohort which satisfies the two conditions,
           // we will add this RexOver into that cohort
           boolean isFound = false;
           for (Pair<RexWindow, Set<Integer>> pair : windowToIndices) {

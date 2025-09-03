@@ -19,18 +19,20 @@ package org.apache.calcite.rex;
 import org.apache.calcite.linq4j.Linq4j;
 import org.apache.calcite.plan.RelOptPredicateList;
 import org.apache.calcite.rel.metadata.NullSentinel;
-import org.apache.calcite.util.Compatible;
 import org.apache.calcite.util.NlsString;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import static com.google.common.collect.ImmutableList.toImmutableList;
 
 /** Analyzes an expression, figures out what are the unbound variables,
  * assigns a variety of values to each unbound variable, and evaluates
@@ -52,14 +54,13 @@ public class RexAnalyzer {
 
   /** Generates a map of variables and lists of values that could be assigned
    * to them. */
-  @SuppressWarnings("BetaApi")
   public Iterable<Map<RexNode, Comparable>> assignments() {
     final List<List<Comparable>> generators =
         variables.stream().map(RexAnalyzer::getComparables)
-            .collect(Util.toImmutableList());
+            .collect(toImmutableList());
     final Iterable<List<Comparable>> product = Linq4j.product(generators);
     return Util.transform(product,
-        values -> Compatible.copyOf(Pair.zip(variables, values)));
+        values -> ImmutableMap.copyOf(Pair.zip(variables, values)));
   }
 
   private static List<Comparable> getComparables(RexNode variable) {
@@ -133,7 +134,10 @@ public class RexAnalyzer {
     @Override public Void visitCall(RexCall call) {
       switch (call.getKind()) {
       case CAST:
+      case M2V:
       case OTHER_FUNCTION:
+      case V2M:
+      case ARRAY_VALUE_CONSTRUCTOR:
         ++unsupportedCount;
         return null;
       default:

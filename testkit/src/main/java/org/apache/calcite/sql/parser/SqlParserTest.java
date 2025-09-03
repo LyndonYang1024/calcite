@@ -17,10 +17,13 @@
 package org.apache.calcite.sql.parser;
 import org.apache.calcite.avatica.util.Quoting;
 import org.apache.calcite.sql.SqlCall;
+import org.apache.calcite.sql.SqlDelete;
 import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.SqlExplain;
 import org.apache.calcite.sql.SqlIdentifier;
+import org.apache.calcite.sql.SqlJoin;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlLambda;
 import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
@@ -30,24 +33,26 @@ import org.apache.calcite.sql.SqlUnknownLiteral;
 import org.apache.calcite.sql.SqlWriterConfig;
 import org.apache.calcite.sql.dialect.AnsiSqlDialect;
 import org.apache.calcite.sql.dialect.SparkSqlDialect;
+import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParser.Config;
 import org.apache.calcite.sql.pretty.SqlPrettyWriter;
 import org.apache.calcite.sql.test.SqlTestFactory;
 import org.apache.calcite.sql.test.SqlTests;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.util.SqlShuttle;
+import org.apache.calcite.sql.validate.SqlAbstractConformance;
+import org.apache.calcite.sql.validate.SqlConformance;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
-import org.apache.calcite.test.DiffTestCase;
 import org.apache.calcite.test.IntervalTest;
 import org.apache.calcite.tools.Hoist;
 import org.apache.calcite.util.Bug;
 import org.apache.calcite.util.ConversionUtil;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.TestUtil;
 import org.apache.calcite.util.Util;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -61,11 +66,11 @@ import org.junit.jupiter.api.Test;
 import java.io.Reader;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
 import java.util.SortedSet;
-import java.util.TreeSet;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
@@ -75,16 +80,18 @@ import static org.apache.calcite.util.Util.toLinux;
 
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.hasToString;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+import static java.util.Objects.requireNonNull;
 
 /**
  * A <code>SqlParserTest</code> is a unit-test for
@@ -106,7 +113,7 @@ public class SqlParserTest {
    * the SQL:92, SQL:99, SQL:2003, SQL:2011, SQL:2014 standards and in Calcite.
    *
    * <p>The standard keywords are derived from
-   * <a href="https://developer.mimer.com/wp-content/uploads/2018/05/Standard-SQL-Reserved-Words-Summary.pdf">Mimer</a>
+   * <a href="https://developer.mimer.com/wp-content/uploads/standard-sql-reserved-words-summary.pdf">Mimer</a>
    * and from the specification.
    *
    * <p>If a new <b>reserved</b> keyword is added to the parser, include it in
@@ -132,6 +139,7 @@ public class SqlParserTest {
       "AS",                            "92", "99", "2003", "2011", "2014", "c",
       "ASC",                           "92", "99",
       "ASENSITIVE",                          "99", "2003", "2011", "2014", "c",
+      "ASOF",                                                              "c",
       "ASSERTION",                     "92", "99",
       "ASYMMETRIC",                          "99", "2003", "2011", "2014", "c",
       "AT",                            "92", "99", "2003", "2011", "2014", "c",
@@ -324,6 +332,7 @@ public class SqlParserTest {
       "JSON_OBJECT",                                                       "c",
       "JSON_OBJECTAGG",                                                    "c",
       "JSON_QUERY",                                                        "c",
+      "JSON_SCOPE",                                                        "c",
       "JSON_VALUE",                                                        "c",
       "KEEP",                                              "2011",
       "KEY",                           "92", "99",
@@ -351,10 +360,12 @@ public class SqlParserTest {
       "MAP",                                 "99",
       "MATCH",                         "92", "99", "2003", "2011", "2014", "c",
       "MATCHES",                                                   "2014", "c",
+      "MATCH_CONDITION",                                                   "c",
       "MATCH_NUMBER",                                              "2014", "c",
       "MATCH_RECOGNIZE",                                           "2014", "c",
       "MAX",                           "92",               "2011", "2014", "c",
       "MAX_CARDINALITY",                                   "2011",
+      "MEASURE",                                                           "c",
       "MEASURES",                                                          "c",
       "MEMBER",                                    "2003", "2011", "2014", "c",
       "MERGE",                                     "2003", "2011", "2014", "c",
@@ -399,6 +410,7 @@ public class SqlParserTest {
       "OPTION",                        "92", "99",
       "OR",                            "92", "99", "2003", "2011", "2014", "c",
       "ORDER",                         "92", "99", "2003", "2011", "2014", "c",
+      "ORDINAL",                                                           "c",
       "ORDINALITY",                          "99",
       "OUT",                           "92", "99", "2003", "2011", "2014", "c",
       "OUTER",                         "92", "99", "2003", "2011", "2014", "c",
@@ -433,6 +445,7 @@ public class SqlParserTest {
       "PRIVILEGES",                    "92", "99",
       "PROCEDURE",                     "92", "99", "2003", "2011", "2014", "c",
       "PUBLIC",                        "92", "99",
+      "QUALIFY",                                                           "c",
       "RANGE",                               "99", "2003", "2011", "2014", "c",
       "RANK",                                              "2011", "2014", "c",
       "READ",                          "92", "99",
@@ -471,6 +484,9 @@ public class SqlParserTest {
       "ROWS",                          "92", "99", "2003", "2011", "2014", "c",
       "ROW_NUMBER",                                        "2011", "2014", "c",
       "RUNNING",                                                   "2014", "c",
+      "SAFE_CAST",                                                         "c",
+      "SAFE_OFFSET",                                                       "c",
+      "SAFE_ORDINAL",                                                      "c",
       "SATURDAY",                                                          "c",
       "SAVEPOINT",                           "99", "2003", "2011", "2014", "c",
       "SCHEMA",                        "92", "99",
@@ -543,6 +559,7 @@ public class SqlParserTest {
       "TRIM_ARRAY",                                        "2011", "2014", "c",
       "TRUE",                          "92", "99", "2003", "2011", "2014", "c",
       "TRUNCATE",                                          "2011", "2014", "c",
+      "TRY_CAST",                                                          "c",
       "TUESDAY",                                                           "c",
       "UESCAPE",                                           "2011", "2014", "c",
       "UNDER",                               "99",
@@ -551,6 +568,7 @@ public class SqlParserTest {
       "UNIQUE",                        "92", "99", "2003", "2011", "2014", "c",
       "UNKNOWN",                       "92", "99", "2003", "2011", "2014", "c",
       "UNNEST",                              "99", "2003", "2011", "2014", "c",
+      "UNSIGNED",                                                          "c",
       "UNTIL",                         "92", "99", "2003",
       "UPDATE",                        "92", "99", "2003", "2011", "2014", "c",
       "UPPER",                         "92",               "2011", "2014", "c",
@@ -558,11 +576,13 @@ public class SqlParserTest {
       "USAGE",                         "92", "99",
       "USER",                          "92", "99", "2003", "2011", "2014", "c",
       "USING",                         "92", "99", "2003", "2011", "2014", "c",
+      "UUID",                                                              "c",
       "VALUE",                         "92", "99", "2003", "2011", "2014", "c",
       "VALUES",                        "92", "99", "2003", "2011", "2014", "c",
       "VALUE_OF",                                                  "2014", "c",
       "VARBINARY",                                         "2011", "2014", "c",
       "VARCHAR",                       "92", "99", "2003", "2011", "2014", "c",
+      "VARIANT",                                                           "c",
       "VARYING",                       "92", "99", "2003", "2011", "2014", "c",
       "VAR_POP",                                           "2011", "2014", "c",
       "VAR_SAMP",                                          "2011", "2014", "c",
@@ -668,6 +688,19 @@ public class SqlParserTest {
     };
   }
 
+  /** Returns a {@link Matcher} that calls a consumer and then succeeds.
+   * The consumer should contain custom code, and should fail if it doesn't
+   * like what it sees. */
+  public static Matcher<SqlNode> customMatches(String description,
+      Consumer<SqlNode> consumer) {
+    return new CustomTypeSafeMatcher<SqlNode>(description) {
+      @Override protected boolean matchesSafely(SqlNode sqlNode) {
+        consumer.accept(sqlNode);
+        return true;
+      }
+    };
+  }
+
   protected SortedSet<String> getReservedKeywords() {
     return keywords("c");
   }
@@ -692,13 +725,17 @@ public class SqlParserTest {
       case "2011":
       case "2014":
       case "c":
-        assert r != null;
+        if (r == null) {
+          throw new AssertionError("word should come before year: " + w);
+        }
         if (dialect == null || dialect.equals(w)) {
           builder.add(r);
         }
         break;
       default:
-        assert r == null || r.compareTo(w) < 0 : "table should be sorted: " + w;
+        if (r != null && r.compareTo(w) >= 0) {
+          throw new AssertionError("table should be sorted: " + w);
+        }
         r = w;
       }
     }
@@ -721,12 +758,71 @@ public class SqlParserTest {
             + ".*");
   }
 
+  /** Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-5997">[CALCITE-5997]
+   * OFFSET operator is incorrectly unparsed</a>. */
+  @Test void testOffset() {
+    sql("SELECT ARRAY[2,4,6][2]")
+        .ok("SELECT (ARRAY[2, 4, 6])[2]");
+    sql("SELECT ARRAY[2,4,6][ORDINAL(2)]")
+        .withDialect(BIG_QUERY)
+        .ok("SELECT (ARRAY[2, 4, 6])[ORDINAL(2)]");
+    sql("SELECT ARRAY[2,4,6][OFFSET(2)]")
+        .withDialect(BIG_QUERY)
+        .ok("SELECT (ARRAY[2, 4, 6])[OFFSET(2)]");
+    sql("SELECT ARRAY[2,4,6][SAFE_OFFSET(2)]")
+        .withDialect(BIG_QUERY)
+        .ok("SELECT (ARRAY[2, 4, 6])[SAFE_OFFSET(2)]");
+    sql("SELECT ARRAY[2,4,6][SAFE_ORDINAL(2)]")
+        .withDialect(BIG_QUERY)
+        .ok("SELECT (ARRAY[2, 4, 6])[SAFE_ORDINAL(2)]");
+
+    // All these tests work without BIG_QUERY as well.
+    // The SQL parser accepts this syntax, so we need to be
+    // able to unparse it into something.
+    sql("SELECT ARRAY[2,4,6][ORDINAL(2)]")
+        .ok("SELECT (ARRAY[2, 4, 6])[ORDINAL(2)]");
+    sql("SELECT ARRAY[2,4,6][OFFSET(2)]")
+        .ok("SELECT (ARRAY[2, 4, 6])[OFFSET(2)]");
+    sql("SELECT ARRAY[2,4,6][SAFE_OFFSET(2)]")
+        .ok("SELECT (ARRAY[2, 4, 6])[SAFE_OFFSET(2)]");
+    sql("SELECT ARRAY[2,4,6][SAFE_ORDINAL(2)]")
+        .ok("SELECT (ARRAY[2, 4, 6])[SAFE_ORDINAL(2)]");
+  }
+
   @Test void testInvalidToken() {
     // Causes problems to the test infrastructure because the token mgr
     // throws a java.lang.Error. The usual case is that the parser throws
     // an exception.
     sql("values (a^#^b)")
         .fails("Lexical error at line 1, column 10\\.  Encountered: \"#\" \\(35\\), after : \"\"");
+  }
+
+  /** Test case for
+    * <a href="https://issues.apache.org/jira/browse/CALCITE-2636">[CALCITE-2636]
+    * SQL parser has quadratic running time when SQL string is very large</a>.
+    *
+    * <p>Before fix, this test took 107s for n = 2_000_000; after, 0.6s. */
+  @Test void testLarge() {
+    checkLarge(1_000_000);
+  }
+
+  private void checkLarge(int n) {
+    final CharSequence bigString = TestUtil.repeat("abcdefghi ", n);
+
+    // a query with a character literal of length 10 * n
+    String sql0 = "select '" + bigString + "' from (values (1))";
+    String expected0 = "SELECT '" + bigString + "'\n"
+        + "FROM (VALUES (ROW(1)))";
+    sql(sql0).ok(expected0);
+
+    // two queries with comments of length 10 * n
+    final String sql1 = "select 1 /* a large comment: " + bigString + "\n*/";
+    final String expected1 = "SELECT 1";
+    sql(sql1).ok(expected1);
+
+    final String sql2 = "select /* a large comment: " + bigString + "*/ 2";
+    final String expected2 = "SELECT 2";
+    sql(sql2).ok(expected2);
   }
 
   // TODO: should fail in parser
@@ -904,6 +1000,77 @@ public class SqlParserTest {
         .ok(expected)
         .withDialect(BIG_QUERY)
         .ok(expectedBigQuery);
+  }
+
+  @Test void testDecimalLiteral() {
+    sql("select DECIMAL '99.999'")
+        .ok("SELECT 99.999");
+    sql("select DECIMAL '   99.999'")
+        .ok("SELECT 99.999");
+    sql("select DECIMAL '   99.999   '")
+        .ok("SELECT 99.999");
+    sql("select DECIMAL '+99.999'")
+        .ok("SELECT 99.999");
+    sql("select DECIMAL '-99.999'")
+        .ok("SELECT -99.999");
+    sql("select DECIMAL'-99.999'")
+        .ok("SELECT -99.999");
+    sql("select DECIMAL'99.999'")
+        .ok("SELECT 99.999");
+    sql("select DECIMAL'.999'")
+        .ok("SELECT 0.999");
+    sql("select DECIMAL'999.'")
+        .ok("SELECT 999");
+    sql("select DECIMAL'999'")
+        .ok("SELECT 999");
+    sql("select DECIMAL '2.11E-2'")
+        .ok("SELECT 0.0211");
+    sql("select DECIMAL '2.11E2'")
+        .ok("SELECT 211");
+    sql("select DECIMAL '.11E-2'")
+        .ok("SELECT 0.0011");
+    // Test case for [CALCITE-5999] DECIMAL literals as sometimes unparsed
+    // looking as DOUBLE literals.
+    sql("select DECIMAL '0.00000000000000001'")
+        .ok("SELECT 0.00000000000000001");
+    sql("select DECIMAL ^''^")
+        .fails("(?s)Literal '' can not be parsed to type 'DECIMAL'.*");
+    sql("select DECIMAL ^'-'^")
+        .fails("(?s)Literal '-' can not be parsed to type 'DECIMAL'.*");
+    sql("select DECIMAL ^'foo'^")
+        .fails("(?s)Literal 'foo' can not be parsed to type 'DECIMAL'.*");
+
+    // Test with bigquery
+    sql("select DECIMAL \"2.11E-2\"")
+        .withDialect(BIG_QUERY)
+        .ok("SELECT 0.0211");
+    sql("select DECIMAL \"999\"")
+        .withDialect(BIG_QUERY)
+        .ok("SELECT 999");
+  }
+
+  @Test void testDecimalWithScale() {
+    sql("select cast(15 as decimal(3, 1))")
+        .ok("SELECT CAST(15 AS DECIMAL(3, 1))");
+    sql("select cast(15 as decimal(3, -1))")
+        .ok("SELECT CAST(15 AS DECIMAL(3, -1))");
+    sql("select cast(15 as decimal(3, 0))")
+        .ok("SELECT CAST(15 AS DECIMAL(3, 0))");
+  }
+
+  @Test void testDecimalWithPrecision() {
+    // the precision greater than the max precision
+    sql("select cast(15 as decimal(1000, 1))")
+        .ok("SELECT CAST(15 AS DECIMAL(1000, 1))");
+    sql("select cast(15 as decimal(3, 1))")
+        .ok("SELECT CAST(15 AS DECIMAL(3, 1))");
+    sql("select cast(15 as decimal(^-^3, 1))")
+        .fails("Encountered \"-\" at line 1, column 27\\.\n"
+            + "Was expecting:\n"
+            + "    <UNSIGNED_INTEGER_LITERAL> \\.\\.\\.\n"
+            + "    ");
+    sql("select cast(15 as decimal(0, 0))")
+        .ok("SELECT CAST(15 AS DECIMAL(0, 0))");
   }
 
   @Test void testDerivedColumnList() {
@@ -1150,6 +1317,20 @@ public class SqlParserTest {
         .fails("Bang equal '!=' is not allowed under the current SQL conformance level");
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6178">[CALCITE-6178]
+   * WITH RECURSIVE query when cloned using sqlshuttle looses RECURSIVE property</a>. */
+  @Test void testRecursiveQueryCloned() throws Exception {
+    SqlNode sqlNode = sql("with RECURSIVE emp2 as "
+        + "(select * from emp union select * from emp2) select * from emp2").parser().parseStmt();
+    SqlNode sqlNode1 = sqlNode.accept(new SqlShuttle() {
+      @Override public SqlNode visit(SqlIdentifier identifier) {
+        return new SqlIdentifier(identifier.names, identifier.getParserPosition());
+      }
+    });
+    assertTrue(sqlNode.equalsDeep(sqlNode1, Litmus.IGNORE));
+  }
+
   @Test void testBetween() {
     sql("select * from t where price between 1 and 2")
         .ok("SELECT *\n"
@@ -1233,6 +1414,42 @@ public class SqlParserTest {
     sql("select c1*1,c2  + 2,c3/3,c4-4,c5*c4  from t")
         .ok("SELECT (`C1` * 1), (`C2` + 2), (`C3` / 3), (`C4` - 4), (`C5` * `C4`)\n"
             + "FROM `T`");
+  }
+
+  @Test void testUnsigned() {
+    sql("SELECT CAST(1 AS UNSIGNED)")
+        .ok("SELECT CAST(1 AS INTEGER UNSIGNED)");
+    sql("SELECT CAST(1 AS INTEGER UNSIGNED)")
+        .same();
+    sql("SELECT CAST(1 AS TINYINT UNSIGNED)")
+        .same();
+    sql("SELECT CAST(1 AS SMALLINT UNSIGNED)")
+        .same();
+    sql("SELECT CAST(1 AS BIGINT UNSIGNED)")
+        .same();
+    List<SqlConformance> unsignedNotSupport =
+        Arrays.asList(
+          SqlConformanceEnum.ORACLE_10,
+          SqlConformanceEnum.ORACLE_12,
+          SqlConformanceEnum.BIG_QUERY,
+          SqlConformanceEnum.PRAGMATIC_99,
+          SqlConformanceEnum.PRAGMATIC_2003,
+          SqlConformanceEnum.PRESTO,
+          SqlConformanceEnum.SQL_SERVER_2008,
+          SqlConformanceEnum.STRICT_92,
+          SqlConformanceEnum.STRICT_99,
+          SqlConformanceEnum.STRICT_2003);
+    unsignedNotSupport.forEach(conformance -> {
+      sql("SELECT CAST(1 AS ^UNSIGNED^)")
+          .withConformance(conformance)
+          .fails("Support for UNSIGNED data types is not enabled");
+    });
+    sql("SELECT CAST(1 AS ^UNSIGNED^)")
+        .withConformance(new SqlAbstractConformance() {
+          @Override public boolean supportsUnsignedTypes() {
+            return false;
+          }
+        }).fails("Support for UNSIGNED data types is not enabled");
   }
 
   @Test void testRow() {
@@ -1684,7 +1901,7 @@ public class SqlParserTest {
         .ok("CEIL((`X` + INTERVAL '1:20' MINUTE TO SECOND) TO MILLENNIUM)");
   }
 
-  @Test void testCast() {
+  @Test public void testCast() {
     expr("cast(x as boolean)")
         .ok("CAST(`X` AS BOOLEAN)");
     expr("cast(x as integer)")
@@ -1699,10 +1916,14 @@ public class SqlParserTest {
         .ok("CAST(`X` AS TIME)");
     expr("cast(x as time with local time zone)")
         .ok("CAST(`X` AS TIME WITH LOCAL TIME ZONE)");
+    expr("cast(x as time with time zone)")
+        .ok("CAST(`X` AS TIME WITH TIME ZONE)");
     expr("cast(x as timestamp without time zone)")
         .ok("CAST(`X` AS TIMESTAMP)");
     expr("cast(x as timestamp with local time zone)")
         .ok("CAST(`X` AS TIMESTAMP WITH LOCAL TIME ZONE)");
+    expr("cast(x as timestamp with time zone)")
+        .ok("CAST(`X` AS TIMESTAMP WITH TIME ZONE)");
     expr("cast(x as time(0))")
         .ok("CAST(`X` AS TIME(0))");
     expr("cast(x as time(0) without time zone)")
@@ -1747,14 +1968,6 @@ public class SqlParserTest {
   }
 
   @Test void testCastFails() {
-    expr("cast(x as time with ^time^ zone)")
-        .fails("(?s).*Encountered \"time\" at .*");
-    expr("cast(x as time(0) with ^time^ zone)")
-        .fails("(?s).*Encountered \"time\" at .*");
-    expr("cast(x as timestamp with ^time^ zone)")
-        .fails("(?s).*Encountered \"time\" at .*");
-    expr("cast(x as timestamp(0) with ^time^ zone)")
-        .fails("(?s).*Encountered \"time\" at .*");
     expr("cast(x as varchar(10) ^with^ local time zone)")
         .fails("(?s).*Encountered \"with\" at line 1, column 23.\n.*");
     expr("cast(x as varchar(10) ^without^ time zone)")
@@ -1937,6 +2150,14 @@ public class SqlParserTest {
             + "FROM `EMP`\n"
             + "WHERE (((1 = 2) AND (EXISTS (SELECT 1\n"
             + "FROM `DEPT`))) AND (3 = 4))");
+  }
+
+  /** Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-6986">[CALCITE-6986]
+   * Parser rejects SQL sources that produce an empty statement list</a>. */
+  @Test public void testEmpty() {
+    sql("").list().ok();
+    sql(" ").list().ok();
+    sql("-- comment").list().ok();
   }
 
   @Test void testUnique() {
@@ -2333,6 +2554,58 @@ public class SqlParserTest {
     final String expected = "SELECT `DEPTNO`, GROUPING(`DEPTNO`)\n"
         + "FROM `EMP`\n"
         + "GROUP BY GROUPING SETS(`DEPTNO`, (`DEPTNO`, `GENDER`), ())";
+    sql(sql).ok(expected);
+  }
+
+  @Test void testWithRecursive() {
+    final String sql = "WITH RECURSIVE aux(i) AS (\n"
+        + "  VALUES (1)\n"
+        + "  UNION ALL\n"
+        + "  SELECT i+1 FROM aux WHERE i < 10\n"
+        + "  )\n"
+        + "  SELECT * FROM aux";
+    final String expected = "WITH RECURSIVE `AUX` (`I`) AS ((VALUES (ROW(1)))\n"
+        + "UNION ALL\n"
+        + "SELECT (`I` + 1)\n"
+        + "FROM `AUX`\n"
+        + "WHERE (`I` < 10)) SELECT *\n"
+        + "FROM `AUX`";
+    sql(sql).ok(expected);
+  }
+
+  @Test void testMultipleWithRecursive() {
+    final String sql = "WITH RECURSIVE a(x) AS\n"
+        + "  (SELECT 1),\n"
+        + "               b(y) AS\n"
+        + "  (SELECT x\n"
+        + "   FROM a\n"
+        + "   UNION ALL SELECT y + 1\n"
+        + "   FROM b\n"
+        + "   WHERE y < 2),\n"
+        + "               c(z) AS\n"
+        + "  (SELECT y\n"
+        + "   FROM b\n"
+        + "   UNION ALL SELECT z * 4\n"
+        + "   FROM c\n"
+        + "   WHERE z < 4 )\n"
+        + "SELECT *\n"
+        + "FROM a,\n"
+        + "     b,\n"
+        + "     c";
+    final String expected = "WITH RECURSIVE `A` (`X`) AS (SELECT 1), `B` (`Y`) AS (SELECT `X`\n"
+        + "FROM `A`\n"
+        + "UNION ALL\n"
+        + "SELECT (`Y` + 1)\n"
+        + "FROM `B`\n"
+        + "WHERE (`Y` < 2)), `C` (`Z`) AS (SELECT `Y`\n"
+        + "FROM `B`\n"
+        + "UNION ALL\n"
+        + "SELECT (`Z` * 4)\n"
+        + "FROM `C`\n"
+        + "WHERE (`Z` < 4)) SELECT *\n"
+        + "FROM `A`,\n"
+        + "`B`,\n"
+        + "`C`";
     sql(sql).ok(expected);
   }
 
@@ -3055,6 +3328,28 @@ public class SqlParserTest {
             + "CROSS JOIN `B`");
   }
 
+  @Test void testJoinCrossComma() {
+    sql("select * from a as a2, b cross join c")
+        .node(
+            customMatches("custom", node -> {
+              // Parsed as left-deep:
+              //   select * from (a as a2, b) cross join c
+              // (This is not valid SQL, but illustrates operator
+              // associativity.)
+              assertThat(node, instanceOf(SqlSelect.class));
+              final SqlSelect select = (SqlSelect) node;
+              assertThat(select.getFrom(), instanceOf(SqlJoin.class));
+              final SqlJoin from = requireNonNull((SqlJoin) select.getFrom());
+              assertThat(from.getLeft(), instanceOf(SqlJoin.class));
+              assertThat(from.getRight(), instanceOf(SqlIdentifier.class));
+            }));
+  }
+
+  @Test void testInternalComma() {
+    sql("select * from (a^,^ b) cross join c")
+        .fails("(?s)Encountered \",\" at .*");
+  }
+
   @Test void testJoinOn() {
     sql("select * from a left join b on 1 = 1 and 2 = 2 where 3 = 3")
         .ok("SELECT *\n"
@@ -3265,10 +3560,9 @@ public class SqlParserTest {
         .ok(expected);
   }
 
-  /** Even in SQL Server conformance mode, we do not yet support
-   * 'function(args)' as an abbreviation for 'table(function(args)'. */
+  /** We now support 'function(args)' as an abbreviation for 'table(function(args)'. */
   @Test void testOuterApplyFunctionFails() {
-    final String sql = "select * from dept outer apply ramp(deptno^)^)";
+    final String sql = "select * from dept outer apply ramp(deptno)^)^";
     sql(sql)
         .withConformance(SqlConformanceEnum.SQL_SERVER_2008)
         .fails("(?s).*Encountered \"\\)\" at .*");
@@ -3336,6 +3630,20 @@ public class SqlParserTest {
         + "tablesample bernoulli(50) REPEATABLE(-^100000000000000000000^) ")
         .fails("Literal '100000000000000000000' "
             + "can not be parsed to type 'java\\.lang\\.Integer'");
+
+    // test bernoulli sample percentage with zero.
+    final String sql4 = "select * "
+        + "from emp as x tablesample bernoulli(0)";
+    final String expected4 = "SELECT *\n"
+        + "FROM `EMP` AS `X` TABLESAMPLE BERNOULLI(0)";
+    sql(sql4).ok(expected4);
+
+    // test system sample percentage with zero.
+    final String sql5 = "select * "
+        + "from emp as x tablesample system(0)";
+    final String expected5 = "SELECT *\n"
+        + "FROM `EMP` AS `X` TABLESAMPLE SYSTEM(0)";
+    sql(sql5).ok(expected5);
   }
 
   @Test void testLiteral() {
@@ -3628,30 +3936,30 @@ public class SqlParserTest {
    * dialect, which uses LIMIT and OFFSET rather than OFFSET and FETCH. */
   @Test void testLimitSpark() {
     final String sql1 = "select a from foo order by b, c limit 2 offset 1";
-    final String expected1 = "SELECT A\n"
-        + "FROM FOO\n"
-        + "ORDER BY B, C\n"
+    final String expected1 = "SELECT `A`\n"
+        + "FROM `FOO`\n"
+        + "ORDER BY `B`, `C`\n"
         + "LIMIT 2\n"
         + "OFFSET 1";
     sql(sql1).withDialect(SparkSqlDialect.DEFAULT).ok(expected1);
 
     final String sql2 = "select a from foo order by b, c limit 2";
-    final String expected2 = "SELECT A\n"
-        + "FROM FOO\n"
-        + "ORDER BY B, C\n"
+    final String expected2 = "SELECT `A`\n"
+        + "FROM `FOO`\n"
+        + "ORDER BY `B`, `C`\n"
         + "LIMIT 2";
     sql(sql2).withDialect(SparkSqlDialect.DEFAULT).ok(expected2);
 
     final String sql3 = "select a from foo order by b, c offset 1";
-    final String expected3 = "SELECT A\n"
-        + "FROM FOO\n"
-        + "ORDER BY B, C\n"
+    final String expected3 = "SELECT `A`\n"
+        + "FROM `FOO`\n"
+        + "ORDER BY `B`, `C`\n"
         + "OFFSET 1";
     sql(sql3).withDialect(SparkSqlDialect.DEFAULT).ok(expected3);
 
     final String sql4 = "select a from foo offset 10";
-    final String expected4 = "SELECT A\n"
-        + "FROM FOO\n"
+    final String expected4 = "SELECT `A`\n"
+        + "FROM `FOO`\n"
         + "OFFSET 10";
     sql(sql4).withDialect(SparkSqlDialect.DEFAULT).ok(expected4);
 
@@ -3659,11 +3967,11 @@ public class SqlParserTest {
         + "union\n"
         + "select b from baz\n"
         + "limit 3";
-    final String expected5 = "SELECT A\n"
-        + "FROM FOO\n"
+    final String expected5 = "SELECT `A`\n"
+        + "FROM `FOO`\n"
         + "UNION\n"
-        + "SELECT B\n"
-        + "FROM BAZ\n"
+        + "SELECT `B`\n"
+        + "FROM `BAZ`\n"
         + "LIMIT 3";
     sql(sql5).withDialect(SparkSqlDialect.DEFAULT).ok(expected5);
   }
@@ -3730,11 +4038,6 @@ public class SqlParserTest {
     sql("select a from foo limit 2,3 ^fetch^ next 4 rows only")
         .withConformance(SqlConformanceEnum.LENIENT)
         .fails("(?s).*Encountered \"fetch\" at line 1.*");
-
-    // "limit start, all" is not valid
-    sql("select a from foo limit 2, ^all^")
-        .withConformance(SqlConformanceEnum.LENIENT)
-        .fails("(?s).*Encountered \"all\" at line 1.*");
   }
 
   /** Test case for
@@ -3768,11 +4071,44 @@ public class SqlParserTest {
     sql("select a from foo offset 2 limit 3 ^fetch^ next 4 rows only")
         .withConformance(SqlConformanceEnum.LENIENT)
         .fails("(?s).*Encountered \"fetch\" at line 1.*");
+  }
 
-    // "limit start, all" is not valid
-    sql("select a from foo offset 1 limit 2, ^all^")
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-5184">[CALCITE-5184]
+   * Support "LIMIT start, ALL" (in MySQL conformance)</a>.
+   *
+   * @see SqlConformance#isLimitStartCountAllowed() */
+  @Test void testLimitStartAll() {
+    String expected = "SELECT `A`\n"
+        + "FROM `FOO`\n"
+        + "OFFSET 2 ROWS";
+    sql("select a from foo ^limit 2, all^")
+        .withConformance(SqlConformanceEnum.DEFAULT)
+        .fails("'LIMIT start, ALL' is not allowed under the "
+            + "current SQL conformance level")
+        .withConformance(SqlConformanceEnum.MYSQL_5)
+        .ok(expected)
         .withConformance(SqlConformanceEnum.LENIENT)
-        .fails("(?s).*Encountered \"all\" at line 1.*");
+        .ok(expected);
+
+    // 'limit 2, all' will override 'offset 1' (if allowed by conformance)
+    sql("select a from foo ^offset 1 limit 2, all^")
+        .withConformance(SqlConformanceEnum.DEFAULT)
+        .fails("'LIMIT start, ALL' is not allowed under the "
+            + "current SQL conformance level")
+        .withConformance(SqlConformanceEnum.MYSQL_5)
+        .fails("'OFFSET start LIMIT count' is not allowed under the "
+            + "current SQL conformance level")
+        .withConformance(SqlConformanceEnum.LENIENT)
+        .ok(expected);
+
+    // 'offset 1' will override 'limit 2, all'
+    String expected2 = "SELECT `A`\n"
+        + "FROM `FOO`\n"
+        + "OFFSET 1 ROWS";
+    sql("select a from foo limit 2, all offset 1")
+        .withConformance(SqlConformanceEnum.LENIENT)
+        .ok(expected2);
   }
 
   @Test void testSqlInlineComment() {
@@ -4173,7 +4509,6 @@ public class SqlParserTest {
             + "Was expecting one of:\n"
             + "    \"LATERAL\" \\.\\.\\.\n"
             + "    \"TABLE\" \\.\\.\\.\n"
-            + "    \"UNNEST\" \\.\\.\\.\n"
             + "    <IDENTIFIER> \\.\\.\\.\n"
             + "    <HYPHENATED_IDENTIFIER> \\.\\.\\.\n"
             + "    <QUOTED_IDENTIFIER> \\.\\.\\.\n"
@@ -4181,7 +4516,8 @@ public class SqlParserTest {
             + "    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> \\.\\.\\.\n"
             + "    <BRACKET_QUOTED_IDENTIFIER> \\.\\.\\.\n"
             + "    <UNICODE_QUOTED_IDENTIFIER> \\.\\.\\.\n"
-            + "    \"\\(\" \\.\\.\\.\n.*");
+            + "    \"\\(\" \\.\\.\\.\n.*"
+            + "    \"UNNEST\" \\.\\.\\.\n.*");
   }
 
   @Test void testEmptyValues() {
@@ -4372,6 +4708,35 @@ public class SqlParserTest {
     sql(sql4).ok(expected4);
   }
 
+  @Test void testAsofJoinTable() {
+    final String sql0 = "select * from orders asof join products\n"
+        + "match_condition orders.ts <= products.expiry\n"
+        + "on orders.productid = products.productid";
+    final String expected0 = "SELECT *\n"
+        + "FROM (`ORDERS` "
+        + "ASOF JOIN `PRODUCTS` "
+        + "MATCH_CONDITION (`ORDERS`.`TS` <= `PRODUCTS`.`EXPIRY`) "
+        + "ON (`ORDERS`.`PRODUCTID` = `PRODUCTS`.`PRODUCTID`))";
+    sql(sql0).ok(expected0);
+    final String sql1 = "select * from orders left asof join products\n"
+        + "match_condition orders.ts <= products.expiry\n"
+        + "on orders.productid = products.productid";
+    final String expected1 = "SELECT *\n"
+        + "FROM (`ORDERS` "
+        + "LEFT ASOF JOIN `PRODUCTS` "
+        + "MATCH_CONDITION (`ORDERS`.`TS` <= `PRODUCTS`.`EXPIRY`) "
+        + "ON (`ORDERS`.`PRODUCTID` = `PRODUCTS`.`PRODUCTID`))";
+    sql(sql1).ok(expected1);
+
+    sql("select * from orders asof join products\n"
+        + "on orders.productid = products.^productid^")
+        .fails("ASOF JOIN missing MATCH_CONDITION");
+    sql("select * from orders join products\n"
+        + "match_condition orders.ts <= products.expiry\n"
+        + "on orders.productid = products_temporal.^productid^")
+        .fails("MATCH_CONDITION only allowed with ASOF JOIN");
+  }
+
   @Test void testCollectionTableWithLateral() {
     final String sql = "select * from dept, lateral table(ramp(dept.deptno))";
     final String expected = "SELECT *\n"
@@ -4399,8 +4764,15 @@ public class SqlParserTest {
     sql(sql).ok(expected);
   }
 
-  @Test void testTableFunction() {
+  @Test void testTableFunctionWithTableWrapper() {
     final String sql = "select * from table(score(table orders))";
+    final String expected = "SELECT *\n"
+        + "FROM TABLE(`SCORE`((TABLE `ORDERS`)))";
+    sql(sql).ok(expected);
+  }
+
+  @Test void testTableFunctionWithoutTableWrapper() {
+    final String sql = "select * from score(table orders)";
     final String expected = "SELECT *\n"
         + "FROM TABLE(`SCORE`((TABLE `ORDERS`)))";
     sql(sql).ok(expected);
@@ -4410,7 +4782,15 @@ public class SqlParserTest {
     // test one partition key for input table
     final String sql = "select * from table(topn(table orders partition by productid, 3))";
     final String expected = "SELECT *\n"
-        + "FROM TABLE(`TOPN`(((TABLE `ORDERS`) PARTITION BY `PRODUCTID`), 3))";
+        + "FROM TABLE(`TOPN`((TABLE `ORDERS`) PARTITION BY `PRODUCTID`, 3))";
+    sql(sql).ok(expected);
+  }
+
+  @Test void testTableFunctionWithNamedArgAndPartitionKey() {
+    final String sql = "select * "
+        + "from table(topn(data=>table orders partition by (productid), col=>3))";
+    final String expected = "SELECT *\n"
+        + "FROM TABLE(`TOPN`(`DATA` => (TABLE `ORDERS`) PARTITION BY `PRODUCTID`, `COL` => 3))";
     sql(sql).ok(expected);
   }
 
@@ -4419,7 +4799,7 @@ public class SqlParserTest {
     final String sql =
         "select * from table(topn(table orders partition by (orderId, productid), 3))";
     final String expected = "SELECT *\n"
-        + "FROM TABLE(`TOPN`(((TABLE `ORDERS`) PARTITION BY `ORDERID`, `PRODUCTID`), 3))";
+        + "FROM TABLE(`TOPN`((TABLE `ORDERS`) PARTITION BY `ORDERID`, `PRODUCTID`, 3))";
     sql(sql).ok(expected);
   }
 
@@ -4428,7 +4808,7 @@ public class SqlParserTest {
     final String sql =
         "select * from table(topn(table orders order by orderId, 3))";
     final String expected = "SELECT *\n"
-        + "FROM TABLE(`TOPN`(((TABLE `ORDERS`) ORDER BY `ORDERID`), 3))";
+        + "FROM TABLE(`TOPN`((TABLE `ORDERS`) ORDER BY `ORDERID`, 3))";
     sql(sql).ok(expected);
   }
 
@@ -4437,7 +4817,7 @@ public class SqlParserTest {
     final String sql =
         "select * from table(topn(table orders order by (orderId, productid), 3))";
     final String expected = "SELECT *\n"
-        + "FROM TABLE(`TOPN`(((TABLE `ORDERS`) ORDER BY `ORDERID`, `PRODUCTID`), 3))";
+        + "FROM TABLE(`TOPN`((TABLE `ORDERS`) ORDER BY `ORDERID`, `PRODUCTID`, 3))";
     sql(sql).ok(expected);
   }
 
@@ -4446,7 +4826,7 @@ public class SqlParserTest {
     final String sql =
         "select * from table(topn(table orders order by (orderId desc, productid asc), 3))";
     final String expected = "SELECT *\n"
-        + "FROM TABLE(`TOPN`(((TABLE `ORDERS`) ORDER BY `ORDERID` DESC, `PRODUCTID`), 3))";
+        + "FROM TABLE(`TOPN`((TABLE `ORDERS`) ORDER BY `ORDERID` DESC, `PRODUCTID`, 3))";
     sql(sql).ok(expected);
   }
 
@@ -4455,7 +4835,7 @@ public class SqlParserTest {
     final String sql =
         "select * from table(topn(table orders partition by productid order by orderId, 3))";
     final String expected = "SELECT *\n"
-        + "FROM TABLE(`TOPN`(((TABLE `ORDERS`) PARTITION BY `PRODUCTID` ORDER BY `ORDERID`), 3))";
+        + "FROM TABLE(`TOPN`((TABLE `ORDERS`) PARTITION BY `PRODUCTID` ORDER BY `ORDERID`, 3))";
     sql(sql).ok(expected);
   }
 
@@ -4465,8 +4845,8 @@ public class SqlParserTest {
         "select * from table(topn(select * from Orders partition by productid "
             + "order by orderId, 3))";
     final String expected = "SELECT *\n"
-        + "FROM TABLE(`TOPN`(((SELECT *\n"
-        + "FROM `ORDERS`) PARTITION BY `PRODUCTID` ORDER BY `ORDERID`), 3))";
+        + "FROM TABLE(`TOPN`((SELECT *\n"
+        + "FROM `ORDERS`) PARTITION BY `PRODUCTID` ORDER BY `ORDERID`, 3))";
     sql(sql).ok(expected);
   }
 
@@ -4483,8 +4863,8 @@ public class SqlParserTest {
         + "  table emp partition by deptno order by empno, "
         + "  table emp_b partition by deptno order by empno))";
     final String expected = "SELECT *\n"
-        + "FROM TABLE(`SIMILARLITY`(((TABLE `EMP`) PARTITION BY `DEPTNO` ORDER BY `EMPNO`), "
-        + "((TABLE `EMP_B`) PARTITION BY `DEPTNO` ORDER BY `EMPNO`)))";
+        + "FROM TABLE(`SIMILARLITY`((TABLE `EMP`) PARTITION BY `DEPTNO` ORDER BY `EMPNO`, "
+        + "(TABLE `EMP_B`) PARTITION BY `DEPTNO` ORDER BY `EMPNO`))";
     sql(sql).ok(expected);
   }
 
@@ -4830,6 +5210,21 @@ public class SqlParserTest {
         .ok("UPDATE `EMPS` SET `EMPNO` = (`EMPNO` + 1)"
             + ", `SAL` = (`SAL` - 1)\n"
             + "WHERE (`EMPNO` = 12)");
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6576">[CALCITE-6576]
+   * In SET clause of UPDATE statement, allow column identifiers to be prefixed
+   * with table alias</a>. */
+  @Test void testUpdateTableAlias() {
+    final String sql = "UPDATE mytable AS t SET t.ID=1";
+    final String expected = "UPDATE `MYTABLE` AS `T` SET `T`.`ID` = 1";
+    sql(sql).ok(expected);
+
+    final String sql2 = "UPDATE scott.mytable SET scott.mytable.ID=1";
+    final String expected2 =
+        "UPDATE `SCOTT`.`MYTABLE` SET `SCOTT`.`MYTABLE`.`ID` = 1";
+    sql(sql2).ok(expected2);
   }
 
   @Test void testMergeSelectSource() {
@@ -5351,8 +5746,11 @@ public class SqlParserTest {
     expr("^DATE '12/21/99'^").same();
     expr("^TIME '1230:33'^").same();
     expr("^TIME '12:00:00 PM'^").same();
+    expr("^TIME WITH LOCAL TIME ZONE '12:00:00 PM'^").same();
+    expr("^TIME WITH TIME ZONE '12:00:00 PM GMT+0:00'^").same();
     expr("TIMESTAMP '12-21-99, 12:30:00'").same();
     expr("TIMESTAMP WITH LOCAL TIME ZONE '12-21-99, 12:30:00'").same();
+    expr("TIMESTAMP WITH TIME ZONE '12-21-99, 12:30:00 GMT+0:00'").same();
     expr("DATETIME '12-21-99, 12:30:00'").same();
   }
 
@@ -5390,8 +5788,14 @@ public class SqlParserTest {
         .ok("TRIM(BOTH ' ' FROM ((COALESCE(CAST(NULL AS VARCHAR(2))) || "
             + "' ') || COALESCE('junk ', '')))");
 
-    sql("trim(^from^ 'beard')")
-        .fails("(?s).*'FROM' without operands preceding it is illegal.*");
+    expr("trim(^from^ 'beard')")
+        .fails("(?s).*Encountered \"from\" at line 1, column 6\\..*");
+    expr("trim('beard ')")
+        .ok("TRIM(BOTH ' ' FROM 'beard ')");
+    // Test case for [CALCITE-6709] https://issues.apache.org/jira/browse/CALCITE-6709
+    // Parser accepts a call to TRIM() with no arguments
+    expr("trim(^)^")
+        .fails("(?s).*Encountered \"\\)\" at line 1, column 6\\..*");
   }
 
   @Test void testConvertAndTranslate() {
@@ -5402,15 +5806,37 @@ public class SqlParserTest {
             + "FROM `T`");
 
     expr("convert('abc' using utf8)")
-        .ok("TRANSLATE('abc', `UTF8`)");
+        .ok("TRANSLATE('abc' USING `UTF8`)");
     sql("select convert(name using gbk) as newName from t")
-        .ok("SELECT TRANSLATE(`NAME`, `GBK`) AS `NEWNAME`\n"
+        .ok("SELECT TRANSLATE(`NAME` USING `GBK`) AS `NEWNAME`\n"
             + "FROM `T`");
 
     expr("translate('abc' using lazy_translation)")
-        .ok("TRANSLATE('abc', `LAZY_TRANSLATION`)");
+        .ok("TRANSLATE('abc' USING `LAZY_TRANSLATION`)");
     sql("select translate(name using utf8) as newName from t")
-        .ok("SELECT TRANSLATE(`NAME`, `UTF8`) AS `NEWNAME`\n"
+        .ok("SELECT TRANSLATE(`NAME` USING `UTF8`) AS `NEWNAME`\n"
+            + "FROM `T`");
+
+    // Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-5996">[CALCITE-5996]</a>
+    // TRANSLATE operator is incorrectly unparsed
+    sql("select translate(col using utf8)\n"
+        + "from (select 'a' as col\n"
+        + " from (values(true)))\n")
+        .ok("SELECT TRANSLATE(`COL` USING `UTF8`)\n"
+            + "FROM (SELECT 'a' AS `COL`\n"
+            + "FROM (VALUES (ROW(TRUE))))");
+  }
+
+  @Test void testConvertOracle() {
+    // If there are 3 params in CONVERT_ORACLE operator, it's valid when
+    // the ORACLE function library is enabled ('fun=oracle').
+    // But the parser can always parse it.
+    expr("convert('abc', utf8, gbk)")
+        .ok("CONVERT('abc', `UTF8`, `GBK`)");
+    expr("convert('abc', utf8)")
+        .ok("CONVERT('abc', `UTF8`)");
+    sql("select convert(name, latin1) as newName from t")
+        .ok("SELECT CONVERT(`NAME`, `LATIN1`) AS `NEWNAME`\n"
             + "FROM `T`");
   }
 
@@ -5571,6 +5997,22 @@ public class SqlParserTest {
     sql("select sum(x) over (order by x) from bids")
         .ok("SELECT (SUM(`X`) OVER (ORDER BY `X`))\n"
             + "FROM `BIDS`");
+  }
+
+  @Test void testWindowSpecExclusion() {
+    sql("select sum(x) over (order by x rows between 2 preceding and 2 following exclude group) "
+        + "from emp")
+        .ok("SELECT (SUM(`X`) OVER (ORDER BY `X` ROWS BETWEEN 2 PRECEDING AND 2 "
+            + "FOLLOWING EXCLUDE GROUP))\n"
+            + "FROM `EMP`");
+    // doesn't parse without frame definition
+    sql("select sum(x) over (order by x ^exclude^ current row) from bids")
+        .fails("(?s).*Encountered \"exclude\".*");
+    // EXCLUDE NO OTHERS is the default behavior, and omitted from UNPARSE
+    sql("select sum(x) over (order by x rows between 2 preceding and 2 following exclude no others)"
+        + " from emp")
+        .ok("SELECT (SUM(`X`) OVER (ORDER BY `X` ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING))\n"
+            + "FROM `EMP`");
   }
 
   @Test void testQualify() {
@@ -5831,6 +6273,18 @@ public class SqlParserTest {
             + "FROM `T`)))");
   }
 
+  @Test void testMultisetQueryConstructor() {
+    sql("SELECT multiset(SELECT x FROM (VALUES(1)) x)")
+        .ok("SELECT (MULTISET ((SELECT `X`\n"
+            + "FROM (VALUES (ROW(1))) AS `X`)))");
+    sql("SELECT multiset(SELECT x FROM (VALUES(1)) x ^ORDER^ BY x)")
+        .fails("(?s)Encountered \"ORDER\" at.*");
+    sql("SELECT multiset(SELECT x FROM (VALUES(1)) x^,^ SELECT x FROM (VALUES(1)) x)")
+        .fails("(?s)Encountered \", SELECT\" at.*");
+    sql("SELECT multiset(^1^, SELECT x FROM (VALUES(1)) x)")
+        .fails("(?s)Non-query expression encountered in illegal context");
+  }
+
   @Test void testMultisetUnion() {
     expr("a multiset union b")
         .ok("(`A` MULTISET UNION ALL `B`)");
@@ -5918,6 +6372,10 @@ public class SqlParserTest {
         .ok("(ARRAY[])");
     expr("array[(1, 'a'), (2, 'b')]")
         .ok("(ARRAY[(ROW(1, 'a')), (ROW(2, 'b'))])");
+
+    expr("array[(select 1)]").ok("(ARRAY[(SELECT 1)])");
+    expr("array[(select 1), 2]").ok("(ARRAY[(SELECT 1), 2])");
+    expr("array[^select^ 1]").fails("(?s)Encountered \"select\".*");
   }
 
   @Test void testArrayFunction() {
@@ -5933,8 +6391,8 @@ public class SqlParserTest {
         .ok("SELECT (ARRAY (SELECT `X`\n"
             + "FROM (VALUES (ROW(1))) AS `X`\n"
             + "ORDER BY `X`))");
-    sql("SELECT array(SELECT x FROM (VALUES(1)) x, ^SELECT^ x FROM (VALUES(1)) x)")
-      .fails("(?s)Incorrect syntax near the keyword 'SELECT' at.*");
+    sql("SELECT array(SELECT x FROM (VALUES(1)) x^,^ SELECT x FROM (VALUES(1)) x)")
+      .fails("(?s)Encountered \", SELECT\" at.*");
     sql("SELECT array(1, ^SELECT^ x FROM (VALUES(1)) x)")
       .fails("(?s)Incorrect syntax near the keyword 'SELECT'.*");
   }
@@ -5990,6 +6448,41 @@ public class SqlParserTest {
         .ok("CAST(`A` AS ROW(`F0` VARCHAR, `F1` TIMESTAMP NULL) MULTISET)");
   }
 
+  /**
+   * Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-5570">[CALCITE-5570]
+   * Support nested map type for SqlDataTypeSpec</a>.
+   */
+  @Test void testCastAsMapType() {
+    expr("cast(a as map<int, int>)")
+        .ok("CAST(`A` AS MAP< INTEGER, INTEGER >)");
+    expr("cast(a as map<int, varchar array>)")
+        .ok("CAST(`A` AS MAP< INTEGER, VARCHAR ARRAY >)");
+    expr("cast(a as map<varchar multiset, map<int, int>>)")
+        .ok("CAST(`A` AS MAP< VARCHAR MULTISET, MAP< INTEGER, INTEGER > >)");
+  }
+
+  /**
+   * Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-2980">[CALCITE-2980]
+   * Implement the FORMAT clause of the CAST operator</a>.
+   */
+  @Test void testFormatClauseInCast() {
+    expr("cast(date '2001-01-01' as varchar FORMAT 'YYYY Q MM')")
+        .ok("CAST(DATE '2001-01-01' AS VARCHAR FORMAT 'YYYY Q MM')");
+    expr("cast(time '1:30:00' as varchar format 'HH24')")
+        .ok("CAST(TIME '1:30:00' AS VARCHAR FORMAT 'HH24')");
+    expr("cast(timestamp '2008-12-25 12:15:00' as varchar format 'MON, YYYY')")
+        .ok("CAST(TIMESTAMP '2008-12-25 12:15:00' AS VARCHAR FORMAT 'MON, YYYY')");
+
+    expr("cast('18-12-03' as date format 'YY-MM-DD')")
+        .ok("CAST('18-12-03' AS DATE FORMAT 'YY-MM-DD')");
+    expr("cast('01:05:07.16' as time format 'HH24:MI:SS.FF4')")
+        .ok("CAST('01:05:07.16' AS TIME FORMAT 'HH24:MI:SS.FF4')");
+    expr("cast('2020.06.03 12:42:53' as timestamp format 'YYYY.MM.DD HH:MI:SS')")
+        .ok("CAST('2020.06.03 12:42:53' AS TIMESTAMP FORMAT 'YYYY.MM.DD HH:MI:SS')");
+  }
+
   @Test void testMapValueConstructor() {
     expr("map[1, 'x', 2, 'y']")
         .ok("(MAP[1, 'x', 2, 'y'])");
@@ -5997,6 +6490,49 @@ public class SqlParserTest {
         .ok("(MAP[1, 'x', 2, 'y'])");
     expr("map[]")
         .ok("(MAP[])");
+  }
+
+  @Test void testMapFunction() {
+    expr("map()").ok("MAP()");
+    expr("MAP()").same();
+    // parser allows odd elements; validator will reject it
+    expr("map(1)").ok("MAP(1)");
+    expr("map(1, 'x', 2, 'y')")
+        .ok("MAP(1, 'x', 2, 'y')");
+    // with upper case
+    expr("MAP(1, 'x', 2, 'y')").same();
+    // with space
+    expr("map (1, 'x', 2, 'y')")
+        .ok("MAP(1, 'x', 2, 'y')");
+  }
+
+  @Test void testMapQueryConstructor() {
+    // parser allows odd elements; validator will reject it
+    sql("SELECT map(SELECT 1)")
+        .ok("SELECT (MAP ((SELECT 1)))");
+    sql("SELECT map(SELECT 1, 2)")
+        .ok("SELECT (MAP ((SELECT 1, 2)))");
+    // with upper case
+    sql("SELECT MAP(SELECT 1, 2)")
+        .ok("SELECT (MAP ((SELECT 1, 2)))");
+    // with space
+    sql("SELECT map (SELECT 1, 2)")
+        .ok("SELECT (MAP ((SELECT 1, 2)))");
+    sql("SELECT map(SELECT T.x, T.y FROM (VALUES(1, 2)) AS T(x, y))")
+        .ok("SELECT (MAP ((SELECT `T`.`X`, `T`.`Y`\n"
+            + "FROM (VALUES (ROW(1, 2))) AS `T` (`X`, `Y`))))");
+    // with order by
+    // note: map subquery is not sql standard, parser allows order by,
+    // but has no sorting effect in runtime (sort will be removed)
+    sql("SELECT map(SELECT T.x, T.y FROM (VALUES(1, 2) ORDER BY T.x) AS T(x, y))")
+        .ok("SELECT (MAP ((SELECT `T`.`X`, `T`.`Y`\n"
+            + "FROM (VALUES (ROW(1, 2))\n"
+            + "ORDER BY `T`.`X`) AS `T` (`X`, `Y`))))");
+
+    sql("SELECT map(1, ^SELECT^ x FROM (VALUES(1)) x)")
+        .fails("(?s)Incorrect syntax near the keyword 'SELECT'.*");
+    sql("SELECT map(SELECT x FROM (VALUES(1)) x^,^ SELECT x FROM (VALUES(1)) x)")
+        .fails("(?s)Encountered \", SELECT\" at.*");
   }
 
   @Test void testVisitSqlInsertWithSqlShuttle() {
@@ -6038,6 +6574,22 @@ public class SqlParserTest {
         + "SELECT `EMPNO`\n"
         + "FROM `EMPS`";
     assertThat(str1, is(toLinux(sqlNodeVisited1.toString())));
+  }
+
+  @Test void testVisitSqlUpdateWithSqlShuttle() {
+    final String sql = "UPDATE emps AS e SET e.sal = 0 WHERE e.sal < 0";
+    final SqlNode sqlNode = sql(sql).node();
+    final SqlNode sqlNodeVisited = sqlNode.accept(new SqlShuttle() {
+      @Override public SqlNode visit(SqlIdentifier identifier) {
+        // Copy the identifier in order to return a new SqlUpdate.
+        return identifier.clone(identifier.getParserPosition());
+      }
+    });
+    assertNotSame(sqlNodeVisited, sqlNode);
+    assertThat(sqlNodeVisited.getKind(), is(SqlKind.UPDATE));
+    final String str1 = "UPDATE `EMPS` AS `E` SET `E`.`SAL` = 0\n"
+        + "WHERE `E`.`SAL` < 0";
+    assertThat(str1, is(toLinux(sqlNodeVisited.toString())));
   }
 
   @Test void testVisitSqlMatchRecognizeWithSqlShuttle() {
@@ -6670,9 +7222,9 @@ public class SqlParserTest {
     expr("extract(microsecond from d)").ok("EXTRACT(MICROSECOND FROM `D`)");
 
     // As for FLOOR, so for DATE_TRUNC.
-    expr("date_trunc(d , year)").ok("DATE_TRUNC(`D`, YEAR)");
-    expr("date_trunc(d , y)").ok("DATE_TRUNC(`D`, `Y`)");
-    expr("date_trunc(d , week(tuesday))").ok("DATE_TRUNC(`D`, `WEEK_TUESDAY`)");
+    expr("date_trunc(d , year)").ok("(DATE_TRUNC(`D`, YEAR))");
+    expr("date_trunc(d , y)").ok("(DATE_TRUNC(`D`, `Y`))");
+    expr("date_trunc(d , week(tuesday))").ok("(DATE_TRUNC(`D`, `WEEK_TUESDAY`))");
   }
 
   @Test void testGeometry() {
@@ -6753,6 +7305,8 @@ public class SqlParserTest {
         .ok("CAST(`X` AS INTERVAL MINUTE TO SECOND)");
     expr("cast(interval '3-2' year to month as CHAR(5))")
         .ok("CAST(INTERVAL '3-2' YEAR TO MONTH AS CHAR(5))");
+    expr("cast(x as ^interval^)")
+        .fails("(?s)Encountered \"interval \\)\".*");
   }
 
   @Test void testCastToVarchar() {
@@ -6867,9 +7421,16 @@ public class SqlParserTest {
         + "UNNEST(`DEPT`.`EMPLOYEES`, `DEPT`.`MANAGERS`)";
     sql(sql).ok(expected);
 
-    // LATERAL UNNEST is not valid
-    sql("select * from dept, lateral ^unnest^(dept.employees)")
-        .fails("(?s)Encountered \"unnest\" at .*");
+    // LATERAL UNNEST is the same as UNNEST
+    // (LATERAL is implicit for UNNEST, so the parser just ignores it)
+    sql("select * from dept, lateral unnest(dept.employees)")
+        .ok("SELECT *\n"
+            + "FROM `DEPT`,\n"
+            + "UNNEST(`DEPT`.`EMPLOYEES`)");
+    sql("select * from dept, unnest(dept.employees)")
+        .ok("SELECT *\n"
+            + "FROM `DEPT`,\n"
+            + "UNNEST(`DEPT`.`EMPLOYEES`)");
 
     // Does not generate extra parentheses around UNNEST because UNNEST is
     // a table expression.
@@ -6905,7 +7466,6 @@ public class SqlParserTest {
 
   @Test void testParensInFrom() {
     // UNNEST may not occur within parentheses.
-    // FIXME should fail at "unnest"
     sql("select *from (^unnest(x)^)")
         .fails("Expected query or join");
 
@@ -7154,15 +7714,10 @@ public class SqlParserTest {
   }
 
   @Test void testAddCarets() {
-    assertEquals(
-        "values (^foo^)",
-        SqlParserUtil.addCarets("values (foo)", 1, 9, 1, 12));
-    assertEquals(
-        "abc^def",
-        SqlParserUtil.addCarets("abcdef", 1, 4, 1, 4));
-    assertEquals(
-        "abcdef^",
-        SqlParserUtil.addCarets("abcdef", 1, 7, 1, 7));
+    assertThat(SqlParserUtil.addCarets("values (foo)", 1, 9, 1, 12),
+        is("values (^foo^)"));
+    assertThat(SqlParserUtil.addCarets("abcdef", 1, 4, 1, 4), is("abc^def"));
+    assertThat(SqlParserUtil.addCarets("abcdef", 1, 7, 1, 7), is("abcdef^"));
   }
 
   @Test void testSnapshotForSystemTimeWithAlias() {
@@ -7209,39 +7764,6 @@ public class SqlParserTest {
     String jdbcKeywords = metadata.getJdbcKeywords();
     assertThat(jdbcKeywords.contains(",COLLECT,"), is(true));
     assertThat(!jdbcKeywords.contains(",SELECT,"), is(true));
-  }
-
-  /**
-   * Tests that reserved keywords are not added to the parser unintentionally.
-   * (Most keywords are non-reserved. The set of reserved words generally
-   * only changes with a new version of the SQL standard.)
-   *
-   * <p>If the new keyword added is intended to be a reserved keyword, update
-   * the {@link #RESERVED_KEYWORDS} list. If not, add the keyword to the
-   * non-reserved keyword list in the parser.
-   */
-  @Test void testNoUnintendedNewReservedKeywords() {
-    assumeTrue(isNotSubclass(), "don't run this test for sub-classes");
-    final SqlAbstractParserImpl.Metadata metadata =
-        fixture().parser().getMetadata();
-
-    final SortedSet<String> reservedKeywords = new TreeSet<>();
-    final SortedSet<String> keywords92 = keywords("92");
-    for (String s : metadata.getTokens()) {
-      if (metadata.isKeyword(s) && metadata.isReservedWord(s)) {
-        reservedKeywords.add(s);
-      }
-      // Check that the parser's list of SQL:92
-      // reserved words is consistent with keywords("92").
-      assertThat(s, metadata.isSql92ReservedWord(s),
-          is(keywords92.contains(s)));
-    }
-
-    final String reason = "The parser has at least one new reserved keyword. "
-        + "Are you sure it should be reserved? Difference:\n"
-        + DiffTestCase.diffLines(ImmutableList.copyOf(getReservedKeywords()),
-        ImmutableList.copyOf(reservedKeywords));
-    assertThat(reason, reservedKeywords, is(getReservedKeywords()));
   }
 
   @Test void testTabStop() {
@@ -7395,7 +7917,7 @@ public class SqlParserTest {
     SqlSetOption opt = (SqlSetOption) node;
     assertThat(opt.getScope(), equalTo("SYSTEM"));
     SqlPrettyWriter writer = new SqlPrettyWriter();
-    assertThat(writer.format(opt.getName()), equalTo("\"SCHEMA\""));
+    assertThat(writer.format(opt.name()), equalTo("\"SCHEMA\""));
     writer = new SqlPrettyWriter();
     assertThat(writer.format(opt.getValue()), equalTo("TRUE"));
     writer = new SqlPrettyWriter();
@@ -7427,7 +7949,7 @@ public class SqlParserTest {
     opt = (SqlSetOption) node;
     assertThat(opt.getScope(), equalTo(null));
     writer = new SqlPrettyWriter();
-    assertThat(writer.format(opt.getName()), equalTo("\"SCHEMA\""));
+    assertThat(writer.format(opt.name()), equalTo("\"SCHEMA\""));
     assertThat(opt.getValue(), equalTo(null));
     writer = new SqlPrettyWriter();
     assertThat(writer.format(opt),
@@ -8478,6 +9000,17 @@ public class SqlParserTest {
     sql(sql).ok(expected);
   }
 
+  @Test void testMeasure() {
+    final String sql = "select deptno,\n"
+        + "  job as myJob,\n"
+        + "  sum(comm) / sum(sal) as measure commRatio\n"
+        + "from emp";
+    final String expected = "SELECT `DEPTNO`, `JOB` AS `MYJOB`,"
+        + " (SUM(`COMM`) / SUM(`SAL`)) AS MEASURE `COMMRATIO`\n"
+        + "FROM `EMP`";
+    sql(sql).ok(expected);
+  }
+
   @Test void testJsonValueExpressionOperator() {
     expr("foo format json")
         .ok("`FOO` FORMAT JSON");
@@ -8559,6 +9092,9 @@ public class SqlParserTest {
         + "EMPTY OBJECT ON ERROR)")
         .ok("JSON_QUERY('{\"foo\": \"bar\"}', "
             + "'lax $' WITHOUT ARRAY WRAPPER EMPTY ARRAY ON EMPTY EMPTY OBJECT ON ERROR)");
+    expr("json_query('{\"foo\": \"bar\"}', 'lax $' RETURNING VARCHAR ARRAY WITHOUT ARRAY WRAPPER)")
+        .ok("JSON_QUERY('{\"foo\": \"bar\"}', "
+            + "'lax $' RETURNING VARCHAR ARRAY WITHOUT ARRAY WRAPPER NULL ON EMPTY NULL ON ERROR)");
   }
 
   @Test void testJsonObject() {
@@ -8578,6 +9114,16 @@ public class SqlParserTest {
         .ok("JSON_OBJECT(KEY 'foo' VALUE "
             + "JSON_OBJECT(KEY 'foo' VALUE 'bar' NULL ON NULL) "
             + "FORMAT JSON NULL ON NULL)");
+    expr("json_object('foo', 'bar')")
+        .ok("JSON_OBJECT(KEY 'foo' VALUE 'bar' NULL ON NULL)");
+    expr("json_object('foo', 'bar', 'baz', 'qux')")
+        .ok("JSON_OBJECT(KEY 'foo' VALUE 'bar', KEY 'baz' VALUE 'qux' NULL ON NULL)");
+    expr("json_object('foo', json_object('bar': 'baz') format json)")
+        .ok("JSON_OBJECT(KEY 'foo' VALUE "
+            + "JSON_OBJECT(KEY 'bar' VALUE 'baz' NULL ON NULL) "
+            + "FORMAT JSON NULL ON NULL)");
+    expr("json_object('foo', 'bar', 'baz'^)^")
+        .fails("(?s)Encountered \"\\)\".*Was expecting.*");
 
     if (!Bug.TODO_FIXED) {
       return;
@@ -8662,6 +9208,14 @@ public class SqlParserTest {
             + "FORMAT JSON NULL ON NULL)");
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6003">[CALCITE-6003]
+   * JSON_ARRAY() with no arguments does not unparse correctly</a>. */
+  @Test void testEmptyJsonArray() {
+    expr("json_array()")
+        .ok("JSON_ARRAY()");
+  }
+
   @Test void testJsonArray() {
     expr("json_array('foo')")
         .ok("JSON_ARRAY('foo' ABSENT ON NULL)");
@@ -8734,7 +9288,7 @@ public class SqlParserTest {
     SqlParser sqlParserReader = sqlParser(new StringReader(query), b -> b);
     SqlNode node1 = sqlParserReader.parseQuery();
     SqlNode node2 = sql(query).node();
-    assertEquals(node2.toString(), node1.toString());
+    assertThat(node1, hasToString(node2.toString()));
   }
 
   @Test void testConfigureFromDialect() {
@@ -9006,6 +9560,67 @@ public class SqlParserTest {
     assertThat(hoisted.substitute(SqlParserTest::varToStr), is(expected2));
   }
 
+  /** Tests {@link SqlLambda}. */
+  @Test public void testLambdaExpression() {
+    sql("select higher_order_func(1, (x, y) -> (x + y)) from t")
+        .ok("SELECT `HIGHER_ORDER_FUNC`(1, (`X`, `Y`) -> (`X` + `Y`))\n"
+            + "FROM `T`");
+
+    sql("select higher_order_func(1, (x, y) -> x + char_length(y)) from t")
+        .ok("SELECT `HIGHER_ORDER_FUNC`(1, (`X`, `Y`) -> (`X` + CHAR_LENGTH(`Y`)))\n"
+            + "FROM `T`");
+
+    sql("select higher_order_func(a -> a + 1, 1) from t")
+        .ok("SELECT `HIGHER_ORDER_FUNC`(`A` -> (`A` + 1), 1)\n"
+            + "FROM `T`");
+
+    sql("select higher_order_func((a) -> 1, 1) from t")
+        .ok("SELECT `HIGHER_ORDER_FUNC`(`A` -> 1, 1)\n"
+            + "FROM `T`");
+
+    sql("select higher_order_func(() -> 1 + 1, 1) from t")
+        .ok("SELECT `HIGHER_ORDER_FUNC`(() -> (1 + 1), 1)\n"
+            + "FROM `T`");
+
+    final String errorMessage1 = "(?s).*Encountered \"\\)\" at .*";
+    sql("select (^)^ -> 1")
+        .fails(errorMessage1);
+
+    sql("select * from t where (^)^ -> a = 1")
+        .fails(errorMessage1);
+
+    final String errorMessage2 = "(?s).*Encountered \"->\" at .*";
+    sql("select (a, b) ^->^ a + b")
+        .fails(errorMessage2);
+
+    sql("select * from t where (a, b) ^->^ a = 1")
+        .fails(errorMessage2);
+
+    sql("select 1 || (a, b) ^->^ a + b")
+        .fails(errorMessage2);
+  }
+
+  /**
+   * Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6977">[CALCITE-6977]
+   * Unparse DELETE SQL throws unsupported exception</a>.
+   */
+  @Test void testSqlDeleteSqlBasicCallToString() {
+    final SqlParserPos parserPos = SqlParserPos.ZERO;
+    final SqlIdentifier employees = new SqlIdentifier("employee", parserPos);
+    final SqlCall where =
+        SqlStdOperatorTable.EQUALS.createCall(parserPos,
+            new SqlIdentifier("id", parserPos),
+            SqlLiteral.createExactNumeric("1", parserPos));
+    SqlDelete sqlDelete = new SqlDelete(parserPos, employees, where, null, null);
+    // Create a new SqlDelete with the same operands as the original by SqlDelete.OPERATOR
+    final SqlCall call =
+        SqlDelete.OPERATOR.createCall(sqlDelete.getFunctionQuantifier(),
+            sqlDelete.getParserPosition(),
+            sqlDelete.getOperandList());
+    assertThat(call, hasToString(sqlDelete.toString()));
+  }
+
   protected static String varToStr(Hoist.Variable v) {
     if (v.node instanceof SqlLiteral) {
       SqlLiteral literal = (SqlLiteral) v.node;
@@ -9198,10 +9813,6 @@ public class SqlParserTest {
     }
   }
 
-  private boolean isNotSubclass() {
-    return this.getClass().equals(SqlParserTest.class);
-  }
-
   /**
    * Implementation of {@link Tester} which makes sure that the results of
    * unparsing a query are consistent with the original query.
@@ -9271,7 +9882,7 @@ public class SqlParserTest {
         final String actual =
             sqlNode.toSqlString(UnparsingTesterImpl::simpleWithParensAnsi)
                 .getSql();
-        assertEquals(expected.get(i), converter.apply(actual));
+        assertThat(converter.apply(actual), is(expected.get(i)));
       }
     }
 
@@ -9294,7 +9905,7 @@ public class SqlParserTest {
       final String sql2 = toSqlString(sqlNodeList2, simple());
 
       // Should be the same as we started with.
-      assertEquals(sql1, sql2);
+      assertThat(sql2, is(sql1));
 
       // Now unparse again in the null dialect.
       // If the unparser is not including sufficient parens to override
@@ -9317,7 +9928,7 @@ public class SqlParserTest {
           c -> simpleWithParens(c)
               .withDialect(dialect2);
       final String actual = sqlNode.toSqlString(writerTransform).getSql();
-      assertEquals(expected, converter.apply(actual));
+      assertThat(converter.apply(actual), is(expected));
 
       // Unparse again in Calcite dialect (which we can parse), and
       // minimal parentheses.
@@ -9331,13 +9942,13 @@ public class SqlParserTest {
       final String sql2 = sqlNode2.toSqlString(simple()).getSql();
 
       // Should be the same as we started with.
-      assertEquals(sql1, sql2);
+      assertThat(sql2, is(sql1));
 
       // Now unparse again in the given dialect.
       // If the unparser is not including sufficient parens to override
       // precedence, the problem will show up here.
       final String actual2 = sqlNode.toSqlString(writerTransform).getSql();
-      assertEquals(expected, converter.apply(actual2));
+      assertThat(converter.apply(actual2), is(expected));
 
       // Now unparse with a randomly configured SqlPrettyWriter.
       // (This is a much a test for SqlPrettyWriter as for the parser.)
@@ -9347,7 +9958,7 @@ public class SqlParserTest {
       SqlNode sqlNode4 =
           parseStmtAndHandleEx(factory2, sql1, parser -> { });
       final String sql4 = sqlNode4.toSqlString(simple()).getSql();
-      assertEquals(sql1, sql4);
+      assertThat(sql4, is(sql1));
     }
 
     @Override public void checkExp(SqlTestFactory factory, StringAndPos sap,
@@ -9361,7 +9972,7 @@ public class SqlParserTest {
           c -> simpleWithParens(c)
               .withDialect(AnsiSqlDialect.DEFAULT);
       final String actual = sqlNode.toSqlString(writerTransform).getSql();
-      assertEquals(expected, converter.apply(actual));
+      assertThat(converter.apply(actual), is(expected));
 
       // Unparse again in Calcite dialect (which we can parse), and
       // minimal parentheses.
@@ -9379,13 +9990,13 @@ public class SqlParserTest {
           sqlNode2.toSqlString(UnaryOperator.identity()).getSql();
 
       // Should be the same as we started with.
-      assertEquals(sql1, sql2);
+      assertThat(sql2, is(sql1));
 
       // Now unparse again in the null dialect.
       // If the unparser is not including sufficient parens to override
       // precedence, the problem will show up here.
       final String actual2 = sqlNode2.toSqlString(null, true).getSql();
-      assertEquals(expected, converter.apply(actual2));
+      assertThat(converter.apply(actual2), is(expected));
     }
 
     @Override public void checkFails(SqlTestFactory factory,

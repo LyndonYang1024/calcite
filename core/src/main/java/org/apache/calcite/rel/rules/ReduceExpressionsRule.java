@@ -44,6 +44,8 @@ import org.apache.calcite.rex.RexDynamicParam;
 import org.apache.calcite.rex.RexExecutor;
 import org.apache.calcite.rex.RexFieldAccess;
 import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexLambda;
+import org.apache.calcite.rex.RexLambdaRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexLocalRef;
 import org.apache.calcite.rex.RexNode;
@@ -57,10 +59,11 @@ import org.apache.calcite.rex.RexSubQuery;
 import org.apache.calcite.rex.RexUnknownAs;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.rex.RexVisitorImpl;
+import org.apache.calcite.rex.RexWindow;
+import org.apache.calcite.rex.RexWindowBound;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlOperator;
-import org.apache.calcite.sql.fun.SqlRowOperator;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.tools.RelBuilderFactory;
@@ -610,7 +613,7 @@ public abstract class ReduceExpressionsRule<C extends ReduceExpressionsRule.Conf
             : group.orderKeys;
         groups.add(
             new Window.Group(keys, group.isRows, group.lowerBound,
-                group.upperBound, relCollation, aggCalls));
+                group.upperBound, group.exclude, relCollation, aggCalls));
       }
       if (reduced) {
         call.transformTo(LogicalWindow
@@ -666,7 +669,7 @@ public abstract class ReduceExpressionsRule<C extends ReduceExpressionsRule.Conf
   /**
    * Reduces a list of expressions.
    *
-   * <p>The {@code matchNullability} flag comes into play when reducing a
+   * <p>The {@code matchNullability} flag comes into play when reducing an
    * expression whose type is nullable. Suppose we are reducing an expression
    * {@code CASE WHEN 'a' = 'a' THEN 1 ELSE NULL END}. Before reduction the
    * type is {@code INTEGER} (nullable), but after reduction the literal 1 has
@@ -1031,6 +1034,13 @@ public abstract class ReduceExpressionsRule<C extends ReduceExpressionsRule.Conf
         if (operand instanceof RexLiteral) {
           return;
         }
+        if (operand instanceof RexCall) {
+          RexCall opCall = (RexCall) operand;
+          if (opCall.getKind() == SqlKind.ARRAY_VALUE_CONSTRUCTOR) {
+            // We can't simplify casts of arrays even if arrays are constant.
+            return;
+          }
+        }
       }
       constExprs.add(exp);
 
@@ -1072,9 +1082,25 @@ public abstract class ReduceExpressionsRule<C extends ReduceExpressionsRule.Conf
       return null;
     }
 
+    void processWindowBound(RexWindowBound bound) {
+      RexNode offset = bound.getOffset();
+      if (offset == null) {
+        return;
+      }
+      bound.accept(this);
+      Constancy constancy = Util.last(stack);
+      if (constancy == Constancy.REDUCIBLE_CONSTANT) {
+        addResult(offset);
+      }
+      Util.last(stack, 1).clear();
+    }
+
     @Override public Void visitOver(RexOver over) {
       // assume non-constant (running SUM(1) looks constant but isn't)
       analyzeCall(over, Constancy.NON_CONSTANT);
+      final RexWindow window = over.getWindow();
+      this.processWindowBound(window.getLowerBound());
+      this.processWindowBound(window.getUpperBound());
       return null;
     }
 
@@ -1120,13 +1146,6 @@ public abstract class ReduceExpressionsRule<C extends ReduceExpressionsRule.Conf
         callConstancy = Constancy.NON_CONSTANT;
       }
 
-      // Row operator itself can't be reduced to a literal, but if
-      // the operands are constants, we still want to reduce those
-      if ((callConstancy == Constancy.REDUCIBLE_CONSTANT)
-          && (call.getOperator() instanceof SqlRowOperator)) {
-        callConstancy = Constancy.NON_CONSTANT;
-      }
-
       if (callConstancy == Constancy.NON_CONSTANT) {
         // any REDUCIBLE_CONSTANT children are now known to be maximal
         // reducible subtrees, so they can be added to the result
@@ -1158,6 +1177,14 @@ public abstract class ReduceExpressionsRule<C extends ReduceExpressionsRule.Conf
     }
 
     @Override public Void visitFieldAccess(RexFieldAccess fieldAccess) {
+      return pushVariable();
+    }
+
+    @Override public Void visitLambda(RexLambda lambda) {
+      return pushVariable();
+    }
+
+    @Override public Void visitLambdaRef(RexLambdaRef lambda) {
       return pushVariable();
     }
   }

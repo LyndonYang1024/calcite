@@ -25,12 +25,12 @@ import com.github.vlsi.gradle.properties.dsl.props
 import com.github.vlsi.gradle.release.RepositoryType
 import de.thetaphi.forbiddenapis.gradle.CheckForbiddenApis
 import de.thetaphi.forbiddenapis.gradle.CheckForbiddenApisExtension
-import java.net.URI
 import net.ltgt.gradle.errorprone.errorprone
 import org.apache.calcite.buildtools.buildext.dsl.ParenthesisBalancer
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
 plugins {
+    base
     // java-base is needed for platform(...) resolution,
     // see https://github.com/gradle/gradle/issues/14822
     `java-base`
@@ -68,11 +68,6 @@ repositories {
 
 tasks.wrapper {
     distributionType = Wrapper.DistributionType.BIN
-    doLast {
-        val sha256Uri = URI("$distributionUrl.sha256")
-        val sha256Sum = String(sha256Uri.toURL().readBytes())
-        propertiesFile.appendText("distributionSha256Sum=${sha256Sum}\n")
-    }
 }
 
 fun reportsForHumans() = !(System.getenv()["CI"]?.toBoolean() ?: false)
@@ -193,7 +188,7 @@ val javadocAggregate by tasks.registering(Javadoc::class) {
 
     classpath = files(sourceSets.map { set -> set.map { it.output + it.compileClasspath } })
     setSource(sourceSets.map { set -> set.map { it.allJava } })
-    setDestinationDir(file("$buildDir/docs/javadocAggregate"))
+    setDestinationDir(file(layout.buildDirectory.get().file("docs/javadocAggregate")))
 }
 
 /** Similar to {@link #javadocAggregate} but includes tests.
@@ -203,22 +198,24 @@ val javadocAggregateIncludingTests by tasks.registering(Javadoc::class) {
     description = "Generates aggregate javadoc for all the artifacts"
 
     val sourceSets = subprojects
+        .filter { it.name != "bom" }
         .mapNotNull { it.extensions.findByType<SourceSetContainer>() }
         .flatMap { listOf(it.named("main"), it.named("test")) }
 
     classpath = files(sourceSets.map { set -> set.map { it.output + it.compileClasspath } })
     setSource(sourceSets.map { set -> set.map { it.allJava } })
-    setDestinationDir(file("$buildDir/docs/javadocAggregateIncludingTests"))
+    setDestinationDir(file(layout.buildDirectory.get().file("docs/javadocAggregateIncludingTests")))
 }
 */
 val adaptersForSqlline = listOf(
-    ":babel", ":cassandra", ":druid", ":elasticsearch",
+    ":arrow", ":babel", ":cassandra", ":druid", ":elasticsearch",
     ":file", ":geode", ":innodb", ":kafka", ":mongodb",
-    ":pig", ":piglet", ":plus", ":redis", ":spark", ":splunk")
+    ":pig", ":piglet", ":plus", ":redis", ":server", ":spark", ":splunk")
 
 val dataSetsForSqlline = listOf(
     "net.hydromatic:foodmart-data-hsqldb",
     "net.hydromatic:scott-data-hsqldb",
+    "net.hydromatic:steelwheels-data-hsqldb",
     "net.hydromatic:chinook-data-hsqldb"
 )
 
@@ -232,6 +229,21 @@ val sqllineClasspath by configurations.creating {
     }
 }
 
+@CacheableRule
+abstract class AddDependenciesRule @Inject constructor(val dependencies: List<String>) : ComponentMetadataRule {
+    override fun execute(context: ComponentMetadataContext) {
+        listOf("compile", "runtime").forEach { base ->
+            context.details.withVariant(base) {
+                withDependencies {
+                    dependencies.forEach {
+                        add(it)
+                    }
+                }
+            }
+        }
+    }
+}
+
 dependencies {
     sqllineClasspath(platform(project(":bom")))
     sqllineClasspath(project(":testkit"))
@@ -239,12 +251,21 @@ dependencies {
     for (p in adaptersForSqlline) {
         sqllineClasspath(project(p))
     }
+
+    components {
+        for (m in dataSetsForSqlline) {
+            withModule<AddDependenciesRule>(m)
+        }
+    }
+
     for (m in dataSetsForSqlline) {
-        sqllineClasspath(module(m))
+        sqllineClasspath(m)
     }
     if (enableJacoco) {
         for (p in subprojects) {
-            jacocoAggregation(p)
+            if (p.name != "bom") {
+                jacocoAggregation(p)
+            }
         }
     }
 }
@@ -318,7 +339,7 @@ fun com.github.autostyle.gradle.BaseFormatExtension.license() {
 sonarqube {
     properties {
         property("sonar.test.inclusions", "**/*Test*/**")
-        property("sonar.coverage.jacoco.xmlReportPaths", "$buildDir/reports/jacoco/jacocoAggregateTestReport/jacocoAggregateTestReport.xml")
+        property("sonar.coverage.jacoco.xmlReportPaths", layout.buildDirectory.get().file("reports/jacoco/jacocoAggregateTestReport/jacocoAggregateTestReport.xml"))
     }
 }
 
@@ -339,6 +360,7 @@ allprojects {
         configurations {
             "implementation" {
                 exclude(group = "org.jetbrains", module = "annotations")
+                exclude(group = "org.bouncycastle", module = "bcprov-jdk15on")
             }
         }
     }
@@ -383,11 +405,21 @@ allprojects {
                     include("**/*.sh", "**/*.bsh", "**/*.cmd", "**/*.bat")
                     include("**/*.properties", "**/*.yml")
                     include("**/*.xsd", "**/*.xsl", "**/*.xml")
+                    include("**/*.fmpp", "**/*.ftl", "**/*.jj")
                     // Autostyle does not support gitignore yet https://github.com/autostyle/autostyle/issues/13
                     exclude("bin/**", "out/**", "target/**", "gradlew*")
                     exclude(rootDir.resolve(".ratignore").readLines())
                 }
                 license()
+                endWithNewline()
+            }
+            format("web") {
+                filter {
+                    include("**/*.md", "**/*.html")
+                    exclude("**/test/**/*.html")
+                }
+                trimTrailingWhitespace()
+                endWithNewline()
             }
             if (project == rootProject) {
                 // Spotless does not exclude subprojects when using target(...)
@@ -438,7 +470,7 @@ allprojects {
             // Unfortunately, Gradle passes only config_loc variable by default, so we make
             // all the paths relative to config_loc
             configProperties!!["cache_file"] =
-                buildDir.resolve("checkstyle/cacheFile").relativeTo(configLoc)
+                layout.buildDirectory.asFile.get().resolve("checkstyle/cacheFile").relativeTo(configLoc)
         }
         // afterEvaluate is to support late sourceSet addition (e.g. jmh sourceset)
         afterEvaluate {
@@ -475,6 +507,8 @@ allprojects {
             (options as StandardJavadocDocletOptions).apply {
                 // Please refrain from using non-ASCII chars below since the options are passed as
                 // javadoc.options file which is parsed with "default encoding"
+                // locale should be placed at the head of any options: https://docs.gradle.org/current/javadoc/org/gradle/external/javadoc/CoreJavadocOptions.html#getLocale
+                locale = "en_US"
                 noTimestamp.value = true
                 showFromProtected()
                 // javadoc: error - The code being documented uses modules but the packages
@@ -499,7 +533,7 @@ allprojects {
     }
 
     plugins.withType<JavaPlugin> {
-        configure<JavaPluginConvention> {
+        configure<JavaPluginExtension> {
             sourceCompatibility = JavaVersion.VERSION_1_8
             targetCompatibility = JavaVersion.VERSION_1_8
         }
@@ -593,8 +627,10 @@ allprojects {
                     replaceRegex("Method parameter list should not end in whitespace or newline", "(?<!;)\\s+\\) \\{", ") {")
                     replaceRegex("Method argument list should not end in whitespace or newline", "(?<!;)\\s+(\\)[);,])", "$1")
                     replaceRegex("Method argument list should not end in whitespace or newline", "(?<!;)(\\s+)(\\)+)[.]", "$2$1.")
-                    replaceRegex("Long assignment should be broken after '='", "^([^/*\"\\n]*) = ([^@\\n]*)\\(\n( *)", "$1 =\n$3$2(")
-                    replaceRegex("Long assignment should be broken after '='", "^([^/*\"\\n]*) = ([^@\\n]*)\\((.*,)\n( *)", "$1 =\n$4$2($3 ")
+                    replaceRegex("Long assignment should be broken after '=' (#1)", "^([^/*\"\\n]*) = ([^@\\n]*)\\(\n( *)", "$1 =\n$3$2(")
+                    replaceRegex("Long assignment should be broken after '=' (#2)", "^([^/*\"\\n]*) = ([^@\\n]*)\\((.*,)\n( *)", "$1 =\n$4$2($3 ")
+                    replaceRegex("Long assignment should be broken after '=' (#3)", "^([^/*\"\\n]*) = ([^@\\n\"?]*[ ][?][ ][^@\\n:]*)\n( *)", "$1 =\n$3$2\n$3    ")
+                    replaceRegex("trailing keyword: implements", "^([^*]*) (implements)\\n( *)", "$1\n$3$2 ")
                     // Assume developer copy-pasted the link, and updated text only, so the url is old, and we replace it with the proper one
                     replaceRegex(">[CALCITE-...] link styles: 1", "<a(?:(?!CALCITE-)[^>])++CALCITE-\\d+[^>]++>\\s*+\\[?(CALCITE-\\d+)\\]?", "<a href=\"https://issues.apache.org/jira/browse/\$1\">[\$1]")
                     // If the link was crafted manually, ensure it has [CALCITE-...] in the link text
@@ -630,7 +666,20 @@ allprojects {
                     replace("hamcrest: nullValue", "org.hamcrest.Matchers.nullValue", "org.hamcrest.CoreMatchers.nullValue")
                     replace("hamcrest: sameInstance", "org.hamcrest.core.IsSame.sameInstance", "org.hamcrest.CoreMatchers.sameInstance")
                     replace("hamcrest: startsWith", "org.hamcrest.core.StringStartsWith.startsWith", "org.hamcrest.CoreMatchers.startsWith")
+                    replaceRegex("hamcrest: hasToString", "\\.toString\\(\\), (is|equalTo)\\(", ", hasToString\\(")
+                    replaceRegex("hamcrest: length", "\\.length, (is|equalTo)\\(", ", arrayWithSize\\(")
                     replaceRegex("hamcrest: size", "\\.size\\(\\), (is|equalTo)\\(", ", hasSize\\(")
+                    replaceRegex("use static import: parseBoolean", "Boolean\\.(parseBoolean\\()", "$1")
+                    replaceRegex("use static import: parseByte", "Byte\\.(parseByte\\()", "$1")
+                    replaceRegex("use static import: parseDouble", "Double\\.(parseDouble\\()", "$1")
+                    replaceRegex("use static import: parseFloat", "Float\\.(parseFloat\\()", "$1")
+                    replaceRegex("use static import: parseInt", "Integer\\.(parseInt\\()", "$1")
+                    replaceRegex("use static import: parseLong", "Long\\.(parseLong\\()", "$1")
+                    replaceRegex("use static import: parseLong", "Short\\.(parseShort\\()", "$1")
+                    replaceRegex("use static import: requireNonNull", "Objects\\.(requireNonNull\\()", "$1")
+                    replaceRegex("use static import: toImmutableList", "ImmutableList\\.(toImmutableList\\(\\))", "$1")
+                    replaceRegex("use static import: checkArgument", "Preconditions\\.(checkArgument\\()", "$1")
+                    replaceRegex("use static import: checkArgument", "Preconditions\\.(checkState\\()", "$1")
                     custom("((() preventer", 1) { contents: String ->
                         ParenthesisBalancer.apply(contents)
                     }
@@ -740,6 +789,9 @@ allprojects {
                 if (project.path == ":core") {
                     extraJavacArgs.add("-AskipDefs=^org\\.apache\\.calcite\\.sql\\.parser\\.impl\\.")
                 }
+                if (project.path == ":server") {
+                    extraJavacArgs.add("-AskipDefs=^org\\.apache\\.calcite\\.sql\\.parser\\.ddl\\.")
+                }
             }
         }
 
@@ -774,6 +826,9 @@ allprojects {
                 inputs.property("java.vm.version", System.getProperty("java.vm.version"))
                 options.encoding = "UTF-8"
                 options.compilerArgs.add("-Xlint:deprecation")
+                // JDK 1.8 is deprecated https://bugs.openjdk.org/browse/JDK-8173605
+                // and now it requires -Xlint:-options to mute warnings about its deprecation
+                options.compilerArgs.add("-Xlint:-options")
                 if (werror) {
                     options.compilerArgs.add("-Werror")
                 }
@@ -782,7 +837,7 @@ allprojects {
                 }
             }
             configureEach<Test> {
-                outputs.cacheIf("test results depend on the database configuration, so we souldn't cache it") {
+                outputs.cacheIf("test results depend on the database configuration, so we shouldn't cache it") {
                     false
                 }
                 useJUnitPlatform {
@@ -793,6 +848,17 @@ allprojects {
                     showStandardStreams = true
                 }
                 exclude("**/*Suite*")
+                if (JavaVersion.current() >= JavaVersion.VERSION_23) {
+                    // Subject.doAs is deprecated and does not work in JDK 23
+                    // and higher unless the (also deprecated) SecurityManager
+                    // is enabled. However, we depend on libraries Avatica and
+                    // Hadoop for our remote driver and Pig and Spark
+                    // adapters. So as a workaround we require enabling the
+                    // security manager on JDK 23 and higher. See
+                    // [CALCITE-6587], [CALCITE-6590] (Avatica), [HADOOP-19212],
+                    // https://openjdk.org/jeps/411.
+                    jvmArgs("-Djava.security.manager=allow")
+                }
                 jvmArgs("-Xmx1536m")
                 jvmArgs("-Djdk.net.URLClassPath.disableClassPathURLCheck=true")
                 // Pass the property to tests
@@ -807,6 +873,8 @@ allprojects {
                 passProperty("user.language", "TR")
                 passProperty("user.country", "tr")
                 passProperty("user.timezone", "UTC")
+                passProperty("calcite.avatica.version", props.string("calcite.avatica.version"))
+                passProperty("gradle.rootDir", rootDir.toString())
                 val props = System.getProperties()
                 for (e in props.propertyNames() as `java.util`.Enumeration<String>) {
                     if (e.startsWith("calcite.") || e.startsWith("avatica.")) {
@@ -830,8 +898,8 @@ allprojects {
                     description = "$description (skipped by default, to enable it add -Dspotbugs)"
                 }
                 reports {
-                    html.isEnabled = reportsForHumans()
-                    xml.isEnabled = !reportsForHumans()
+                    html.required.set(reportsForHumans())
+                    xml.required.set(!reportsForHumans())
                 }
                 enabled = enableSpotBugs
             }
@@ -888,8 +956,9 @@ allprojects {
             archives(sourcesJar)
         }
 
-        val archivesBaseName = "calcite-$name"
-        setProperty("archivesBaseName", archivesBaseName)
+        base {
+            archivesName.set("calcite-$name")
+        }
 
         configure<PublishingExtension> {
             if (project.path == ":") {
@@ -902,7 +971,7 @@ allprojects {
             }
             publications {
                 create<MavenPublication>(project.name) {
-                    artifactId = archivesBaseName
+                    artifactId = base.archivesName.get()
                     version = rootProject.version.toString()
                     description = project.description
                     from(components["java"])
@@ -944,10 +1013,14 @@ allprojects {
                             // Re-format the XML
                             asNode()
                         }
+
+                        fun capitalize(input: String): String {
+                            return input.replaceFirstChar { it.uppercaseChar() }
+                        }
                         name.set(
-                            (project.findProperty("artifact.name") as? String) ?: "Calcite ${project.name.capitalize()}"
+                            (project.findProperty("artifact.name") as? String) ?: "Calcite ${capitalize(project.name)}"
                         )
-                        description.set(project.description ?: "Calcite ${project.name.capitalize()}")
+                        description.set(project.description ?: "Calcite ${capitalize(project.name)}")
                         inceptionYear.set("2012")
                         url.set("https://calcite.apache.org")
                         licenses {

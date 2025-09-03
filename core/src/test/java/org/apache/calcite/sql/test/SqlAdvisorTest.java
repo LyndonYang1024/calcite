@@ -46,8 +46,9 @@ import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
 import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.hamcrest.Matchers.hasToString;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -92,6 +93,7 @@ class SqlAdvisorTest extends SqlValidatorTestCase {
           "TABLE(CATALOG.SALES.DEPT)",
           "TABLE(CATALOG.SALES.DEPTNULLABLES)",
           "TABLE(CATALOG.SALES.DEPT_SINGLE)",
+          "TABLE(CATALOG.SALES.DOUBLE_PK)",
           "TABLE(CATALOG.SALES.DEPT_NESTED)",
           "TABLE(CATALOG.SALES.DEPT_NESTED_EXPANDED)",
           "TABLE(CATALOG.SALES.BONUS)",
@@ -165,6 +167,7 @@ class SqlAdvisorTest extends SqlValidatorTestCase {
           "KEYWORD(CURSOR)",
           "KEYWORD(DATE)",
           "KEYWORD(DATETIME)",
+          "KEYWORD(DECIMAL)",
           "KEYWORD(DENSE_RANK)",
           "KEYWORD(ELEMENT)",
           "KEYWORD(EVERY)",
@@ -210,6 +213,8 @@ class SqlAdvisorTest extends SqlValidatorTestCase {
           "KEYWORD(NULLIF)",
           "KEYWORD(OCTET_LENGTH)",
           "KEYWORD(OVERLAY)",
+          "KEYWORD(PERCENTILE_CONT)",
+          "KEYWORD(PERCENTILE_DISC)",
           "KEYWORD(PERCENT_RANK)",
           "KEYWORD(PERIOD)",
           "KEYWORD(POSITION)",
@@ -245,6 +250,7 @@ class SqlAdvisorTest extends SqlValidatorTestCase {
           "KEYWORD(UNKNOWN)",
           "KEYWORD(UPPER)",
           "KEYWORD(USER)",
+          "KEYWORD(UUID)",
           "KEYWORD(VAR_POP)",
           "KEYWORD(VAR_SAMP)",
           "KEYWORD(YEAR)");
@@ -329,6 +335,7 @@ class SqlAdvisorTest extends SqlValidatorTestCase {
           "KEYWORD(SUBMULTISET)",
           "KEYWORD(SUCCEEDS)",
           "KEYWORD([)",
+          "KEYWORD(^)",
           "KEYWORD(||)");
 
   private static final List<String> WHERE_KEYWORDS =
@@ -363,6 +370,7 @@ class SqlAdvisorTest extends SqlValidatorTestCase {
           "KEYWORD(EXTEND)",
           "KEYWORD(/*+)",
           "KEYWORD(AS)",
+          "KEYWORD(ASOF)",
           "KEYWORD(USING)",
           "KEYWORD(OUTER)",
           "KEYWORD(RIGHT)",
@@ -375,6 +383,7 @@ class SqlAdvisorTest extends SqlValidatorTestCase {
           "KEYWORD(HAVING)",
           "KEYWORD(LEFT)",
           "KEYWORD(EXCEPT)",
+          "KEYWORD(MATCH_CONDITION)",
           "KEYWORD(MATCH_RECOGNIZE)",
           "KEYWORD(MINUS)",
           "KEYWORD(JOIN)",
@@ -1543,7 +1552,7 @@ class SqlAdvisorTest extends SqlValidatorTestCase {
         }
         buf.append(token).append("\n");
       }
-      assertEquals(expected, buf.toString());
+      assertThat(buf, hasToString(expected));
     }
 
     protected void assertHint(List<String>... expectedLists) {
@@ -1565,8 +1574,7 @@ class SqlAdvisorTest extends SqlValidatorTestCase {
           advisor.getCompletionHints(
               sap.sql,
               requireNonNull(sap.pos, "sap.pos"));
-      assertEquals(
-          expectedResults, convertCompletionHints(results));
+      assertThat(convertCompletionHints(results), is(expectedResults));
     }
 
     /**
@@ -1578,7 +1586,7 @@ class SqlAdvisorTest extends SqlValidatorTestCase {
       SqlAdvisor advisor = factory.createAdvisor();
 
       String actual = advisor.simplifySql(sap.sql, sap.cursor);
-      assertEquals(expected, actual);
+      assertThat(actual, is(expected));
       return this;
     }
 
@@ -1615,11 +1623,10 @@ class SqlAdvisorTest extends SqlValidatorTestCase {
       final String[] replaced = {null};
       List<SqlMoniker> results =
           advisor.getCompletionHints(sap.sql, sap.cursor, replaced);
-      assertEquals(expectedResults, convertCompletionHints(results),
-          () -> "Completion hints for " + sap);
+      assertThat("Completion hints for " + sap, convertCompletionHints(results),
+          is(expectedResults));
       if (expectedWord != null) {
-        assertEquals(expectedWord, replaced[0],
-            "replaced[0] for " + sap);
+        assertThat("replaced[0] for " + sap, replaced[0], is(expectedWord));
       } else {
         assertNotNull(replaced[0]);
       }
@@ -1640,8 +1647,8 @@ class SqlAdvisorTest extends SqlValidatorTestCase {
         }
         missingReplacemenets.remove(id);
         String actualReplacement = advisor.getReplacement(result, word);
-        assertEquals(expectedReplacement, actualReplacement,
-            () -> sap + ", replacement of " + word + " with " + id);
+        assertThat(sap + ", replacement of " + word + " with " + id,
+            actualReplacement, is(expectedReplacement));
       }
       if (missingReplacemenets.isEmpty()) {
         return;

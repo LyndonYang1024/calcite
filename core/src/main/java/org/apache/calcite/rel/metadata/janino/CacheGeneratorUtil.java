@@ -209,7 +209,9 @@ class CacheGeneratorUtil {
 
       /** Returns e.g. ", ignoreNulls". */
       private StringBuilder safeArgList(StringBuilder buff, Method method) {
-        //We ignore the first 2 arguments since they are included other ways.
+        assert method.getParameterCount() >= 2
+            : "At least 2 metadata method parameters are required";
+        // We ignore the first 2 arguments since they are included other ways.
         for (Ord<Class<?>> t : Ord.zip(method.getParameterTypes())
             .subList(2, method.getParameterCount())) {
           if (Primitive.is(t.e) || RexNode.class.isAssignableFrom(t.e)) {

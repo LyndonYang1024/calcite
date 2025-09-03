@@ -39,6 +39,8 @@ import org.apache.calcite.util.Bug;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
@@ -68,38 +70,27 @@ import static org.apache.calcite.sql.test.ResultCheckers.isSingle;
 public interface SqlOperatorFixture extends AutoCloseable {
   //~ Enums ------------------------------------------------------------------
 
-  // TODO: Change message when Fnl3Fixed to something like
-  // "Invalid character for cast: PC=0 Code=22018"
-  String INVALID_CHAR_MESSAGE =
-      Bug.FNL3_FIXED ? null : "(?s).*";
+  // TODO: Change message
+  String INVALID_CHAR_MESSAGE = "(?s).*";
 
-  // TODO: Change message when Fnl3Fixed to something like
-  // "Overflow during calculation or cast: PC=0 Code=22003"
-  String OUT_OF_RANGE_MESSAGE =
-      Bug.FNL3_FIXED ? null : "(?s).*";
+  String OUT_OF_RANGE_MESSAGE = ".* out of range.*";
 
-  // TODO: Change message when Fnl3Fixed to something like
-  // "Division by zero: PC=0 Code=22012"
-  String DIVISION_BY_ZERO_MESSAGE =
-      Bug.FNL3_FIXED ? null : "(?s).*";
+  String INTEGER_OVERFLOW = "integer overflow.*";
 
-  // TODO: Change message when Fnl3Fixed to something like
-  // "String right truncation: PC=0 Code=22001"
-  String STRING_TRUNC_MESSAGE =
-      Bug.FNL3_FIXED ? null : "(?s).*";
+  String LONG_OVERFLOW = "long overflow.*";
 
-  // TODO: Change message when Fnl3Fixed to something like
-  // "Invalid datetime format: PC=0 Code=22007"
-  String BAD_DATETIME_MESSAGE =
-      Bug.FNL3_FIXED ? null : "(?s).*";
+  String DECIMAL_OVERFLOW = ".*cannot be represented as a DECIMAL.*";
 
-  // Error messages when an invalid time unit is given as
-  // input to extract for a particular input type.
-  String INVALID_EXTRACT_UNIT_CONVERTLET_ERROR =
-      "Extract.*from.*type data is not supported";
+  String WRONG_FORMAT_MESSAGE = "Number has wrong format.*";
 
-  String INVALID_EXTRACT_UNIT_VALIDATION_ERROR =
-      "Cannot apply 'EXTRACT' to arguments of type .*'\n.*";
+  // TODO: Change message
+  String DIVISION_BY_ZERO_MESSAGE = "(?s).*";
+
+  // TODO: Change message
+  String STRING_TRUNC_MESSAGE = "(?s).*";
+
+  // TODO: Change message
+  String BAD_DATETIME_MESSAGE = "(?s).*";
 
   String LITERAL_OUT_OF_RANGE_MESSAGE =
       "(?s).*Numeric literal.*out of range.*";
@@ -107,13 +98,16 @@ public interface SqlOperatorFixture extends AutoCloseable {
   String INVALID_ARGUMENTS_NUMBER =
       "Invalid number of arguments to function .* Was expecting .* arguments";
 
+  String INVALID_ARGUMENTS_TYPE_VALIDATION_ERROR =
+      "Cannot apply '.*' to arguments of type .*";
+
   //~ Enums ------------------------------------------------------------------
 
   /**
    * Name of a virtual machine that can potentially implement an operator.
    */
   enum VmName {
-    FENNEL, JAVA, EXPAND
+    JAVA, EXPAND
   }
 
   //~ Methods ----------------------------------------------------------------
@@ -468,6 +462,24 @@ public interface SqlOperatorFixture extends AutoCloseable {
       ResultChecker checker);
 
   /**
+   * Checks that an aggregate expression returns the expected result.
+   *
+   * <p>For example, <code>checkAgg("AVG(DISTINCT x)", new String[] {"2", "3",
+   * null, "3" }, "INTEGER", isSingle([2, 3]));</code>
+   *
+   * @param expr        Aggregate expression, e.g. <code>SUM(DISTINCT x)</code>
+   * @param inputValues Array of input values, e.g. <code>["1", null,
+   *                    "2"]</code>.
+   * @param type        Expected result type
+   * @param checker     Result checker
+   */
+  void checkAgg(
+      String expr,
+      String[] inputValues,
+      String type,
+      ResultChecker checker);
+
+  /**
    * Checks that an aggregate expression with multiple args returns the expected
    * result.
    *
@@ -564,6 +576,19 @@ public interface SqlOperatorFixture extends AutoCloseable {
                 .with(CalciteConnectionProperty.FUN, library.fun));
   }
 
+  default SqlOperatorFixture withLibraries(SqlLibrary... libraries) {
+    List<String> names = new ArrayList<>();
+    for (SqlLibrary lib : libraries) {
+      names.add(lib.fun);
+    }
+    return withOperatorTable(
+        SqlLibraryOperatorTableFactory.INSTANCE
+            .getOperatorTable(libraries))
+        .withConnectionFactory(cf ->
+            cf.with(ConnectionFactories.add(CalciteAssert.SchemaSpec.HR))
+                .with(CalciteConnectionProperty.FUN, String.join(",", names)));
+  }
+
   /** Applies this fixture to some code for each of the given libraries. */
   default void forEachLibrary(Iterable<? extends SqlLibrary> libraries,
       Consumer<SqlOperatorFixture> consumer) {
@@ -654,8 +679,14 @@ public interface SqlOperatorFixture extends AutoCloseable {
 
   default void checkCastFails(String value, String targetType,
       String expectedError, boolean runtime, CastType castType) {
-    final String castString = getCastString(value, targetType, !runtime, castType);
-    checkFails(castString, expectedError, runtime);
+    // Safe casts should never fail
+    boolean shouldFail = castType == CastType.CAST;
+    final String castString = getCastString(value, targetType, shouldFail && !runtime, castType);
+    if (shouldFail) {
+      checkFails(castString, expectedError, runtime);
+    } else {
+      checkNull(castString);
+    }
   }
 
   default void checkCastToString(String value, @Nullable String type,

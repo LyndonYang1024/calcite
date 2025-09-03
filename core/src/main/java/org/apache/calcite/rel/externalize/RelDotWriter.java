@@ -50,9 +50,9 @@ public class RelDotWriter extends RelWriterImpl {
    */
   private final Map<RelNode, List<RelNode>> outArcTable = new LinkedHashMap<>();
 
-  private Map<RelNode, String> nodeLabels = new HashMap<>();
+  private final Map<RelNode, String> nodeLabels = new HashMap<>();
 
-  private Multimap<RelNode, String> nodeStyles = HashMultimap.create();
+  private final Multimap<RelNode, String> nodeStyles = HashMultimap.create();
 
   private final WriteOption option;
 
@@ -236,10 +236,9 @@ public class RelDotWriter extends RelWriterImpl {
     }
 
     List<String> descParts = new ArrayList<>();
-    for (int idx = 0; idx < label.length(); idx += option.maxNodeLabelPerLine()) {
-      int endIdx = idx + option.maxNodeLabelPerLine() > label.length() ? label.length()
-          : idx + option.maxNodeLabelPerLine();
-      descParts.add(label.substring(idx, endIdx));
+    for (int i = 0; i < label.length(); i += option.maxNodeLabelPerLine()) {
+      int endIdx = Math.min(i + option.maxNodeLabelPerLine(), label.length());
+      descParts.add(label.substring(i, endIdx));
     }
 
     return String.join("\\n", descParts) + (trimmed ? "..." : "");

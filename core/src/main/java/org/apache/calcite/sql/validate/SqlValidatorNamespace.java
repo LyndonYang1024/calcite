@@ -184,7 +184,7 @@ public interface SqlValidatorNamespace {
    * @return This namespace cast to desired type
    * @throws ClassCastException if no such interface is available
    */
-  <T extends Object> T unwrap(Class<T> clazz);
+  <T> T unwrap(Class<T> clazz);
 
   /**
    * Returns whether this namespace implements a given interface, or wraps a
@@ -212,4 +212,12 @@ public interface SqlValidatorNamespace {
    * @param modality Modality
    */
   boolean supportsModality(SqlModality modality);
+
+  /** Returns a {@code FilterRequirement} object describing the "must-filter"
+   * fields of this namespace (fields that must be filtered in a query) and
+   * "bypass" fields that can remove the requirement that fields are
+   * filtered. */
+  default FilterRequirement getFilterRequirement() {
+    return FilterRequirement.EMPTY;
+  }
 }

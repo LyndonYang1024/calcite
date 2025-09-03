@@ -68,6 +68,13 @@ public class RexInterpreter implements RexVisitor<Comparable> {
           SqlKind.DIVIDE, SqlKind.COALESCE, SqlKind.CEIL,
           SqlKind.FLOOR, SqlKind.EXTRACT);
 
+  private final SqlFunctions.LikeFunction likeFunction =
+      new SqlFunctions.LikeFunction();
+  private final SqlFunctions.SimilarFunction similarFunction =
+      new SqlFunctions.SimilarFunction();
+  private final SqlFunctions.SimilarEscapeFunction similarEscapeFunction =
+      new SqlFunctions.SimilarEscapeFunction();
+
   private final Map<RexNode, Comparable> environment;
 
   /** Creates an interpreter.
@@ -144,6 +151,18 @@ public class RexInterpreter implements RexVisitor<Comparable> {
     throw unbound(fieldRef);
   }
 
+  @Override public Comparable visitLambda(RexLambda lambda) {
+    throw unbound(lambda);
+  }
+
+  @Override public Comparable visitLambdaRef(RexLambdaRef lambdaRef) {
+    throw unbound(lambdaRef);
+  }
+
+  @Override public Comparable visitNodeAndFieldIndex(RexNodeAndFieldIndex nodeAndFieldIndex) {
+    throw unbound(nodeAndFieldIndex);
+  }
+
   @Override public Comparable visitCall(RexCall call) {
     final List<Comparable> values = visitList(call.operands);
     switch (call.getKind()) {
@@ -215,6 +234,8 @@ public class RexInterpreter implements RexVisitor<Comparable> {
     case CEIL:
     case FLOOR:
       return ceil(call, values);
+    case TRIM:
+      return trim(call, values);
     case EXTRACT:
       return extract(values);
     case LIKE:
@@ -245,7 +266,7 @@ public class RexInterpreter implements RexVisitor<Comparable> {
     return DateTimeUtils.unixDateExtract(timeUnitRange, v2);
   }
 
-  private static Comparable like(List<Comparable> values) {
+  private Comparable like(List<Comparable> values) {
     if (containsNull(values)) {
       return N;
     }
@@ -253,17 +274,17 @@ public class RexInterpreter implements RexVisitor<Comparable> {
     final NlsString pattern = (NlsString) values.get(1);
     switch (values.size()) {
     case 2:
-      return SqlFunctions.like(value.getValue(), pattern.getValue());
+      return likeFunction.like(value.getValue(), pattern.getValue());
     case 3:
       final NlsString escape = (NlsString) values.get(2);
-      return SqlFunctions.like(value.getValue(), pattern.getValue(),
+      return likeFunction.like(value.getValue(), pattern.getValue(),
           escape.getValue());
     default:
       throw new AssertionError();
     }
   }
 
-  private static Comparable similar(List<Comparable> values) {
+  private Comparable similar(List<Comparable> values) {
     if (containsNull(values)) {
       return N;
     }
@@ -271,17 +292,17 @@ public class RexInterpreter implements RexVisitor<Comparable> {
     final NlsString pattern = (NlsString) values.get(1);
     switch (values.size()) {
     case 2:
-      return SqlFunctions.similar(value.getValue(), pattern.getValue());
+      return similarFunction.similar(value.getValue(), pattern.getValue());
     case 3:
       final NlsString escape = (NlsString) values.get(2);
-      return SqlFunctions.similar(value.getValue(), pattern.getValue(),
+      return similarEscapeFunction.similar(value.getValue(), pattern.getValue(),
           escape.getValue());
     default:
       throw new AssertionError();
     }
   }
 
-  @SuppressWarnings({"BetaApi", "rawtypes", "unchecked", "UnstableApiUsage"})
+  @SuppressWarnings({"rawtypes", "unchecked"})
   private static Comparable search(SqlTypeName typeName, List<Comparable> values) {
     final Comparable value = values.get(0);
     final Sarg sarg = (Sarg) values.get(1);
@@ -301,7 +322,7 @@ public class RexInterpreter implements RexVisitor<Comparable> {
   /** Translates the values in a RangeSet from literal format to runtime format.
    * For example the DATE SQL type uses DateString for literals and Integer at
    * runtime. */
-  @SuppressWarnings({"BetaApi", "rawtypes", "unchecked", "UnstableApiUsage"})
+  @SuppressWarnings({"rawtypes", "unchecked"})
   private static RangeSet translate(RangeSet rangeSet, SqlTypeName typeName) {
     switch (typeName) {
     case DATE:
@@ -322,6 +343,25 @@ public class RexInterpreter implements RexVisitor<Comparable> {
       }
     }
     return N;
+  }
+
+  private static Comparable trim(RexNode call, List<Comparable> values) {
+    if (containsNull(values)) {
+      return N;
+    }
+    NlsString trimType = (NlsString) values.get(0);
+    NlsString trimed = (NlsString) values.get(1);
+    NlsString trimString = (NlsString) values.get(2);
+    switch (trimType.getValue()) {
+    case "BOTH":
+      return trimString.trim(trimed.getValue());
+    case "LEADING":
+      return trimString.ltrim(trimed.getValue());
+    case "TRAILING":
+      return trimString.rtrim(trimed.getValue());
+    default:
+      throw unbound(call);
+    }
   }
 
   private static Comparable ceil(RexCall call, List<Comparable> values) {

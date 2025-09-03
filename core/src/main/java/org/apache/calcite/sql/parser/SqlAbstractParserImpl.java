@@ -19,10 +19,7 @@ package org.apache.calcite.sql.parser;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.avatica.util.TimeUnit;
 import org.apache.calcite.config.CharLiteralStyle;
-import org.apache.calcite.rel.type.TimeFrameSet;
 import org.apache.calcite.runtime.CalciteContextException;
-import org.apache.calcite.runtime.CalciteException;
-import org.apache.calcite.runtime.Resources;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -59,7 +56,7 @@ import java.util.TreeSet;
 import static org.apache.calcite.util.Static.RESOURCE;
 
 /**
- * Abstract base for parsers generated from CommonParser.jj.
+ * Abstract base for parsers.
  */
 public abstract class SqlAbstractParserImpl {
   //~ Static fields/initializers ---------------------------------------------

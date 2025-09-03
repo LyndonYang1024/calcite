@@ -55,6 +55,7 @@ import org.apache.calcite.schema.SchemaVersion;
 import org.apache.calcite.schema.Schemas;
 import org.apache.calcite.schema.impl.AbstractSchema;
 import org.apache.calcite.schema.impl.LongSchemaVersion;
+import org.apache.calcite.schema.impl.ViewTable;
 import org.apache.calcite.server.CalciteServer;
 import org.apache.calcite.server.CalciteServerStatement;
 import org.apache.calcite.sql.advise.SqlAdvisor;
@@ -68,7 +69,6 @@ import org.apache.calcite.util.BuiltInMethod;
 import org.apache.calcite.util.Holder;
 import org.apache.calcite.util.Util;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 
@@ -87,6 +87,8 @@ import java.util.Properties;
 import java.util.TimeZone;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+
+import static com.google.common.base.Preconditions.checkArgument;
 
 import static org.apache.calcite.linq4j.Nullness.castNonNull;
 
@@ -148,7 +150,15 @@ abstract class CalciteConnectionImpl
         requireNonNull(rootSchema != null
             ? rootSchema
             : CalciteSchema.createRootSchema(true));
-    Preconditions.checkArgument(this.rootSchema.isRoot(), "must be root schema");
+    // Add dual table metadata when isSupportedDualTable return true
+    if (cfg.conformance().isSupportedDualTable()) {
+      SchemaPlus schemaPlus = this.rootSchema.plus();
+      // Dual table contains one row with a value X
+      schemaPlus.add(
+          "DUAL", ViewTable.viewMacro(schemaPlus, "VALUES ('X')",
+          ImmutableList.of(), null, false));
+    }
+    checkArgument(this.rootSchema.isRoot(), "must be root schema");
     this.properties.put(InternalProperty.CASE_SENSITIVE, cfg.caseSensitive());
     this.properties.put(InternalProperty.UNQUOTED_CASING, cfg.unquotedCasing());
     this.properties.put(InternalProperty.QUOTED_CASING, cfg.quotedCasing());
@@ -426,6 +436,7 @@ abstract class CalciteConnectionImpl
               .deriveTimeFrameSet(TimeFrames.CORE);
       final long localOffset = timeZone.getOffset(time);
       final long currentOffset = localOffset;
+      final long sysOffset = TimeZone.getDefault().getOffset(time);
       final String user = "sa";
       final String systemUser = System.getProperty("user.name");
       final String localeName = connection.config().locale();
@@ -441,6 +452,7 @@ abstract class CalciteConnectionImpl
       builder.put(Variable.UTC_TIMESTAMP.camelName, time)
           .put(Variable.CURRENT_TIMESTAMP.camelName, time + currentOffset)
           .put(Variable.LOCAL_TIMESTAMP.camelName, time + localOffset)
+          .put(Variable.SYS_TIMESTAMP.camelName, time + sysOffset)
           .put(Variable.TIME_ZONE.camelName, timeZone)
           .put(Variable.TIME_FRAME_SET.camelName, timeFrameSet)
           .put(Variable.USER.camelName, user)
@@ -617,5 +629,4 @@ abstract class CalciteConnectionImpl
       this.iterator = iterator;
     }
   }
-
 }

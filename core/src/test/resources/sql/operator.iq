@@ -18,6 +18,16 @@
 !use scott
 !set outputformat mysql
 
+select * from (select 'word' i union all select 'w' i) t1 where i='w';
++------+
+| I    |
++------+
+| w    |
++------+
+(1 row)
+
+!ok
+
 # [CALCITE-1095] NOT precedence
 select * from "scott".emp where not sal > 1300;
 +-------+--------+----------+------+------------+---------+---------+--------+
@@ -63,6 +73,36 @@ select * from "scott".emp where not sal > 1300 and not sal < 1200;
 |  7934 | MILLER | CLERK    | 7782 | 1982-01-23 | 1300.00 |         |     10 |
 +-------+--------+----------+------+------------+---------+---------+--------+
 (3 rows)
+
+!ok
+
+# [CALCITE-6731] Add support for ^ operator in Calcite
+SELECT CAST(empno AS BIGINT) ^ CAST(deptno AS BIGINT) AS foo FROM "scott".emp LIMIT 5;
++------+
+| FOO  |
++------+
+| 7389 |
+| 7509 |
+| 7551 |
+| 7578 |
+| 7672 |
++------+
+(5 rows)
+
+!ok
+
+# [CALCITE-6731] Add support for ^ operator in Calcite
+SELECT CAST(empno AS BIGINT) ^ CAST(mgr AS INTEGER) AS foo FROM "scott".emp WHERE mgr IS NOT NULL LIMIT 5;
++------+
+| FOO  |
++------+
+| 1012 |
+|  535 |
+|  785 |
+|  857 |
+|  883 |
++------+
+(5 rows)
 
 !ok
 
@@ -221,6 +261,7 @@ order by 1,2;
 
 !ok
 
+!if (fixed.calcite6828) {
 # FLOOR and CEIL of TIME
 select v,
   case when b then 'ceil' else 'floor' end as op,
@@ -235,15 +276,16 @@ select v,
 from (values (time '12:34:56.7')) as t(v),
   (values false, true) as u(b)
 order by 1,2;
-+----------+-------+----------+----------+----------+----------+----------+----------+----------+----------+
-| V        | OP    | Y        | Q        | M        | W        | D        | H        | MI       | S        |
-+----------+-------+----------+----------+----------+----------+----------+----------+----------+----------+
-| 12:34:56 | ceil  | 12:34:57 | 12:34:56 | 12:34:56 | 12:34:56 | 12:34:56 | 13:00:00 | 12:35:00 | 12:34:57 |
-| 12:34:56 | floor | 12:34:56 | 12:34:56 | 12:34:56 | 12:34:56 | 12:34:56 | 12:00:00 | 12:34:00 | 12:34:56 |
-+----------+-------+----------+----------+----------+----------+----------+----------+----------+----------+
++------------+-------+------------+------------+------------+------------+------------+------------+------------+------------+
+| V          | OP    | Y          | Q          | M          | W          | D          | H          | MI         | S          |
++------------+-------+------------+------------+------------+------------+------------+------------+------------+------------+
+| 12:34:56.7 | ceil  | 12:34:57.0 | 12:34:56.7 | 12:34:56.7 | 12:34:56.7 | 12:34:56.7 | 13:00:00.0 | 12:35:00.0 | 12:34:57.0 |
+| 12:34:56.7 | floor | 12:34:56.6 | 12:34:56.6 | 12:34:56.6 | 12:34:56.6 | 12:34:56.7 | 12:00:00.0 | 12:34:00.0 | 12:34:56.0 |
++------------+-------+------------+------------+------------+------------+------------+------------+------------+------------+
 (2 rows)
-
 !ok
+
+!}
 
 select "T"."X"[1] as x1 from (VALUES (ROW(ROW(3, 7), ROW(4, 8)))) as T(x, y);
 
@@ -346,7 +388,7 @@ CITY VARCHAR
 !ok
 
 select au."birthPlace"[CAST(NULL AS INTEGER)] as city from "bookstore"."authors" au;
-Cannot infer type of field at position null within ROW type: RecordType(RecordType(JavaType(class java.math.BigDecimal) latitude, JavaType(class java.math.BigDecimal) longtitude) coords, JavaType(class java.lang.String) city, JavaType(class java.lang.String) country)
+Index in ROW type does not have a constant integer or string value
 !error
 
 select au."birthPlace"[2] as city from "bookstore"."authors" au;
@@ -361,6 +403,382 @@ CITY VARCHAR
 | Ionia     |
 +-----------+
 (3 rows)
+
+!ok
+
+# [CALCITE-6454] Implement array comparison operators
+select array[1, 2] < array[1, 2] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++-------+
+| FOO   |
++-------+
+| false |
++-------+
+(1 row)
+
+!ok
+
+select array[1, 2] < array[2, 3] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[1, 2] < array[1] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++-------+
+| FOO   |
++-------+
+| false |
++-------+
+(1 row)
+
+!ok
+
+select array[1] < array[1, 2] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[1, 2] < array[1, null] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[1, 2] <= array[1, 2] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[1, 2] <= array[2, 3] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[1, 2] <= array[1] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++-------+
+| FOO   |
++-------+
+| false |
++-------+
+(1 row)
+
+!ok
+
+select array[1] <= array[1, 2] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[1, 2] <= array[1, null] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[1, 2] > array[1, 2] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++-------+
+| FOO   |
++-------+
+| false |
++-------+
+(1 row)
+
+!ok
+
+select array[1, 2] > array[2, 3] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++-------+
+| FOO   |
++-------+
+| false |
++-------+
+(1 row)
+
+!ok
+
+select array[1, 2] > array[1] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[1] > array[1, 2] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++-------+
+| FOO   |
++-------+
+| false |
++-------+
+(1 row)
+
+!ok
+
+select array[1, 2] > array[1, null] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++-------+
+| FOO   |
++-------+
+| false |
++-------+
+(1 row)
+
+!ok
+
+select array[1, 2] >= array[1, 2] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[1, 2] >= array[2, 3] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++-------+
+| FOO   |
++-------+
+| false |
++-------+
+(1 row)
+
+!ok
+
+select array[1, 2] >= array[1] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[1] >= array[1, 2] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++-------+
+| FOO   |
++-------+
+| false |
++-------+
+(1 row)
+
+!ok
+
+select array[1, 2] >= array[1, null] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++-------+
+| FOO   |
++-------+
+| false |
++-------+
+(1 row)
+
+!ok
+
+select array[array[1, 2]] < array[array[2, 3]] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[row(1, 2)] < array[row(2, 3)] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[array[1, 2], array[3, 4]] < array[array[1, 2], array[5, 6]] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select array[row(1, 2), row(3, 4)] < array[row(1, 2), row(5, 6)] as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+select row(array[1, 2], array[3, 4]) < row(array[1, 2], array[5, 6]) as foo;
+
+FOO BOOLEAN(1) NOT NULL
+!type
++------+
+| FOO  |
++------+
+| true |
++------+
+(1 row)
+
+!ok
+
+SELECT 2 ^ 3 AS foo;
++-----+
+| FOO |
++-----+
+|   1 |
++-----+
+(1 row)
+
+!ok
+
+SELECT 0 ^ 0 AS foo;
++-----+
+| FOO |
++-----+
+|   0 |
++-----+
+(1 row)
+
+!ok
+
+SELECT 1 ^ 1 AS foo;
++-----+
+| FOO |
++-----+
+|   0 |
++-----+
+(1 row)
+
+!ok
+
+SELECT 5 ^ 2 AS foo;
++-----+
+| FOO |
++-----+
+|   7 |
++-----+
+(1 row)
+
+!ok
+
+SELECT 255 ^ 128 AS foo;
++-----+
+| FOO |
++-----+
+| 127 |
++-----+
+(1 row)
 
 !ok
 

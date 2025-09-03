@@ -36,19 +36,24 @@ import org.apache.calcite.sql.SqlPostfixOperator;
 import org.apache.calcite.sql.SqlPrefixOperator;
 import org.apache.calcite.sql.SqlSpecialOperator;
 import org.apache.calcite.sql.SqlTimeLiteral;
+import org.apache.calcite.sql.SqlTimeTzLiteral;
 import org.apache.calcite.sql.SqlTimestampLiteral;
+import org.apache.calcite.sql.SqlTimestampTzLiteral;
 import org.apache.calcite.sql.SqlUtil;
+import org.apache.calcite.sql.SqlUuidLiteral;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.impl.SqlParserImpl;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.PrecedenceClimbingParser;
 import org.apache.calcite.util.TimeString;
+import org.apache.calcite.util.TimeWithTimeZoneString;
 import org.apache.calcite.util.TimestampString;
+import org.apache.calcite.util.TimestampWithTimeZoneString;
+import org.apache.calcite.util.TryThreadLocal;
 import org.apache.calcite.util.Util;
 import org.apache.calcite.util.trace.CalciteTrace;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -66,8 +71,12 @@ import java.util.IllformedLocaleException;
 import java.util.List;
 import java.util.Locale;
 import java.util.StringTokenizer;
+import java.util.TimeZone;
+import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
+
+import static com.google.common.base.Preconditions.checkArgument;
 
 import static org.apache.calcite.util.Static.RESOURCE;
 
@@ -325,6 +334,18 @@ public final class SqlParserUtil {
     return SqlLiteral.createDate(d, pos);
   }
 
+  public static SqlNumericLiteral parseDecimalLiteral(String s, SqlParserPos pos) {
+    try {
+      // The s maybe scientific notation string,e.g. 1.2E-3,
+      // we need to convert it to 0.0012
+      s = new BigDecimal(s).toPlainString();
+    } catch (NumberFormatException e) {
+      throw SqlUtil.newContextException(pos,
+          RESOURCE.invalidLiteral(s, "DECIMAL"));
+    }
+    return SqlLiteral.createExactNumeric(s, pos);
+  }
+
   public static SqlTimeLiteral parseTimeLiteral(String s, SqlParserPos pos) {
     final DateTimeUtils.PrecisionTime pt =
         DateTimeUtils.parsePrecisionDateTimeLiteral(s,
@@ -339,6 +360,31 @@ public final class SqlParserUtil {
     return SqlLiteral.createTime(t, pt.getPrecision(), pos);
   }
 
+  public static SqlTimeTzLiteral parseTimeTzLiteral(
+      String s, SqlParserPos pos) {
+    // We expect the string to end in a timezone.
+    final int lastSpace = s.lastIndexOf(" ");
+    DateTimeUtils.PrecisionTime pt = null;
+    if (lastSpace >= 0) {
+      final String timeZone = s.substring(lastSpace + 1);
+      final String time = s.substring(0, lastSpace);
+
+      final TimeZone tz = TimeZone.getTimeZone(timeZone);
+      if (tz != null) {
+        pt =
+            DateTimeUtils.parsePrecisionDateTimeLiteral(time, Format.get().time, tz, -1);
+      }
+    }
+    if (pt == null) {
+      throw SqlUtil.newContextException(pos,
+          RESOURCE.illegalLiteral("TIME WITH TIME ZONE", s,
+              RESOURCE.badFormat(DateTimeUtils.TIME_FORMAT_STRING).str()));
+    }
+    final TimeWithTimeZoneString t = TimeWithTimeZoneString.fromCalendarFields(pt.getCalendar())
+        .withFraction(pt.getFraction());
+    return SqlLiteral.createTime(t, pt.getPrecision(), pos);
+  }
+
   public static SqlTimestampLiteral parseTimestampLiteral(String s,
       SqlParserPos pos) {
     return parseTimestampLiteral(SqlTypeName.TIMESTAMP, s, pos);
@@ -348,6 +394,30 @@ public final class SqlParserUtil {
       String s, SqlParserPos pos) {
     return parseTimestampLiteral(SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE, s,
         pos);
+  }
+
+  public static SqlUuidLiteral parseUuidLiteral(String s, SqlParserPos pos) {
+    UUID uuid = UUID.fromString(s);
+    return SqlLiteral.createUuid(uuid, pos);
+  }
+
+  public static SqlTimestampTzLiteral parseTimestampTzLiteral(
+      String s, SqlParserPos pos) {
+    // We expect the string to end in a timezone.
+    int lastSpace = s.lastIndexOf(" ");
+    if (lastSpace >= 0) {
+      final String timeZone = s.substring(lastSpace + 1);
+      final String timestamp = s.substring(0, lastSpace);
+      TimeZone tz = TimeZone.getTimeZone(timeZone);
+      if (tz != null) {
+        SqlTimestampLiteral ts = parseTimestampLiteral(SqlTypeName.TIMESTAMP, timestamp, pos);
+        TimestampWithTimeZoneString tsz = new TimestampWithTimeZoneString(ts.getTimestamp(), tz);
+        return SqlLiteral.createTimestamp(tsz, ts.getPrec(), pos);
+      }
+    }
+    throw SqlUtil.newContextException(pos,
+        RESOURCE.illegalLiteral("TIMESTAMP WITH TIME ZONE", s,
+            RESOURCE.badFormat(DateTimeUtils.TIMESTAMP_FORMAT_STRING).str()));
   }
 
   private static SqlTimestampLiteral parseTimestampLiteral(SqlTypeName typeName,
@@ -430,7 +500,7 @@ public final class SqlParserUtil {
   public static long intervalToMillis(
       String literal,
       SqlIntervalQualifier intervalQualifier) {
-    Preconditions.checkArgument(!intervalQualifier.isYearMonth(),
+    checkArgument(!intervalQualifier.isYearMonth(),
         "interval must be day time");
     int[] ret;
     try {
@@ -468,10 +538,9 @@ public final class SqlParserUtil {
         interval.getIntervalQualifier());
   }
 
-  public static long intervalToMonths(
-      String literal,
+  public static long intervalToMonths(String literal,
       SqlIntervalQualifier intervalQualifier) {
-    Preconditions.checkArgument(intervalQualifier.isYearMonth(),
+    checkArgument(intervalQualifier.isYearMonth(),
         "interval must be year month");
     int[] ret;
     try {
@@ -673,10 +742,16 @@ public final class SqlParserUtil {
     return i + column;
   }
 
+  /** Given a string with carets, double each of them.
+   * (This should probably be more sophisticated, and ignore carets within string literals). */
+  public static String escapeCarets(String sql) {
+    return sql.replace("^", "^^");
+  }
+
   /**
    * Converts a string to a string with one or two carets in it. For example,
    * <code>addCarets("values (foo)", 1, 9, 1, 12)</code> yields "values
-   * (^foo^)".
+   * (^foo^)".  Existing carets are escaped by doubling.
    */
   public static String addCarets(
       String sql,
@@ -686,8 +761,8 @@ public final class SqlParserUtil {
       int endCol) {
     String sqlWithCarets;
     int cut = lineColToIndex(sql, line, col);
-    sqlWithCarets = sql.substring(0, cut) + "^"
-        + sql.substring(cut);
+    sqlWithCarets = escapeCarets(sql.substring(0, cut)) + "^"
+        + escapeCarets(sql.substring(cut));
     if ((col != endCol) || (line != endLine)) {
       cut = lineColToIndex(sqlWithCarets, endLine, endCol);
       if (line == endLine) {
@@ -696,7 +771,7 @@ public final class SqlParserUtil {
       if (cut < sqlWithCarets.length()) {
         sqlWithCarets =
             sqlWithCarets.substring(0, cut)
-                + "^" + sqlWithCarets.substring(cut);
+                + "^" + escapeCarets(sqlWithCarets.substring(cut));
       } else {
         sqlWithCarets += "^";
       }
@@ -806,7 +881,7 @@ public final class SqlParserUtil {
       int end,
       T o) {
     requireNonNull(list, "list");
-    Preconditions.checkArgument(start < end);
+    checkArgument(start < end);
     for (int i = end - 1; i > start; --i) {
       list.remove(i);
     }
@@ -1153,11 +1228,11 @@ public final class SqlParserUtil {
   /** Pre-initialized {@link DateFormat} objects, to be used within the current
    * thread, because {@code DateFormat} is not thread-safe. */
   private static class Format {
-    private static final ThreadLocal<@Nullable Format> PER_THREAD =
-        ThreadLocal.withInitial(Format::new);
+    private static final TryThreadLocal<Format> PER_THREAD =
+        TryThreadLocal.withInitial(Format::new);
 
     private static Format get() {
-      return requireNonNull(PER_THREAD.get(), "PER_THREAD.get()");
+      return PER_THREAD.get();
     }
 
     final DateFormat timestamp =
